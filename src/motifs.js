@@ -461,10 +461,9 @@ export const MOTIF_NAMES = Object.freeze(Object.keys(MOTIF_GENERATORS));
  * @returns {{ name: string, polylines: Array<object>, bounds: { x: number, y: number, w: number, h: number } }}
  */
 export function drawMotif(name, rng) {
-  const generator = MOTIF_GENERATORS[name];
-  if (!generator) {
+  if (!Object.hasOwn(MOTIF_GENERATORS, name)) {
     throw new Error(`unknown motif: ${name}`);
   }
-  const polylines = generator(rng);
+  const polylines = MOTIF_GENERATORS[name](rng);
   return { name, polylines, bounds: computeBounds(polylines) };
 }

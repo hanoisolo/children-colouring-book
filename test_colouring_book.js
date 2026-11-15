@@ -925,6 +925,16 @@ test('drawMotif rejects an unknown motif', () => {
   assert.throws(() => drawMotif('unicorn', makeRng(1)), { message: 'unknown motif: unicorn' });
 });
 
+test('drawMotif rejects inherited object properties as motif names', () => {
+  for (const name of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+    assert.throws(
+      () => drawMotif(name, makeRng(1)),
+      { message: `unknown motif: ${name}` },
+      `${name} was treated as a motif`,
+    );
+  }
+});
+
 test('the polyline builders set closed, fill and weight', () => {
   assert.deepEqual(stroke([[0, 0], [1, 1]]), {
     points: [[0, 0], [1, 1]],
@@ -1676,6 +1686,20 @@ test('generateBook rejects invalid input', () => {
   assert.throws(() => generateBook('space', 'a'.repeat(MAX_NAME_LENGTH + 1)), /characters or fewer/);
   assert.throws(() => generateBook('a'.repeat(MAX_THEME_LENGTH + 1), 'Amara'), /characters or fewer/);
   assert.throws(() => generateBook('space', 'Am@ra'), /letters, spaces, hyphens and apostrophes/);
+});
+
+test('generateBook survives hostile but valid input', () => {
+  for (const theme of ['constructor', '<script>alert(1)</script>', 'a\r\nb\u0000']) {
+    const book = generateBook(theme, 'Amara');
+    assert.equal(book.pages.length, PAGE_COUNT, `${JSON.stringify(theme)} produced the wrong page count`);
+    assert.ok(book.pdfBytes.length > 1000, `${JSON.stringify(theme)} produced a tiny PDF`);
+    assert.ok(!book.cover.svg.includes('<script'), `${JSON.stringify(theme)} leaked markup into the SVG`);
+  }
+  assert.throws(
+    () => generateBook('space', 'Amara\u0000b'),
+    /letters, spaces, hyphens and apostrophes/,
+    'a NUL in the name was accepted',
+  );
 });
 
 test('generateBook sanitises the download filename', () => {
