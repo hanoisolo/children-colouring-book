@@ -466,6 +466,7 @@ test('the published limits are pinned', () => {
   assert.equal(MAX_THEME_LENGTH, 60);
   assert.equal(MAX_NAME_LENGTH, 20);
   assert.equal(PAGE_COUNT, 5);
+  assert.equal(MIN_DISTINCT_PAGE_MOTIF_SETS, 4);
 });
 
 test('sanitiseFilename produces a filesystem-safe name', () => {
@@ -523,7 +524,7 @@ test('planBookPages gives each page between three and seven distinct motifs', ()
 });
 
 test('planBookPages puts at least one theme motif on every page', () => {
-  for (const theme of ['space dinosaurs', 'under the sea', 'fairy garden']) {
+  for (const theme of ['space dinosaurs', 'under the sea', 'fairy garden', 'rocket']) {
     const book = planBookPages(theme, 'Amara');
     assert.equal(book.matched, true, `${theme} did not match`);
     for (const page of book.pages) {
@@ -897,6 +898,17 @@ test('the polyline builders set closed, fill and weight', () => {
   assert.equal(circle(0.5, 0.5, 0.4).closed, true);
   assert.equal(ellipse(0.5, 0.5, 0.4, 0.2).closed, true);
   assert.equal(arc(0.5, 0.5, 0.4, 0, 90).closed, false);
+});
+
+test('the house and the car carry their filled foreground shapes', () => {
+  for (const [name, expected] of [['house', 2], ['car', 2]]) {
+    const { polylines } = drawMotif(name, makeRng(7));
+    const filled = polylines.filter((line) => line.fill);
+    assert.equal(filled.length, expected, `${name} has ${filled.length} filled shapes, expected ${expected}`);
+    for (const line of filled) {
+      assert.equal(line.closed, true, `${name} fills an open path`);
+    }
+  }
 });
 
 test('computeBounds handles an empty set and a single line', () => {
@@ -1399,7 +1411,8 @@ test('buildPdf returns a Uint8Array with a PDF 1.4 header and binary comment', (
   const bytes = buildPdf(samplePages(), { title: 'Test' });
   assert.ok(bytes instanceof Uint8Array);
   const text = pdfText(bytes);
-  assert.ok(text.startsWith(`%PDF-${PDF_VERSION}\n`));
+  assert.equal(PDF_VERSION, '1.4');
+  assert.ok(text.startsWith('%PDF-1.4\n'), 'the header version is a wire contract, not a constant');
   assert.deepEqual(Array.from(bytes.slice(10, 14)), [0xe2, 0xe3, 0xcf, 0xd3]);
   assert.ok(text.trimEnd().endsWith('%%EOF'));
 });
@@ -1438,6 +1451,42 @@ test('startxref lands on the xref table and the row count matches /Size', () => 
   const rows = [...text.slice(startxref).matchAll(/^\d{10} \d{5} [nf] $/gm)];
   assert.equal(rows.length, declared);
   assert.equal(declared, 2 * pages.length + 4);
+});
+
+test('the page tree, trailer and free entry are pinned to the object numbering', () => {
+  const pages = samplePages();
+  const count = pages.length;
+  const text = pdfText(buildPdf(pages, { title: 'Test' }));
+
+  const kids = Array.from({ length: count }, (_, index) => `${3 + 2 * index} 0 R`).join(' ');
+  assert.ok(text.includes(`/Kids [${kids}]`), 'the page tree does not reference the page objects');
+
+  for (let index = 0; index < count; index += 1) {
+    const pageNumber = 3 + 2 * index;
+    assert.ok(
+      text.includes(`/Contents ${pageNumber + 1} 0 R`),
+      `page object ${pageNumber} does not point at its content stream`,
+    );
+  }
+
+  const infoNumber = 2 * count + 3;
+  const size = infoNumber + 1;
+  assert.ok(
+    text.includes(`trailer\n<< /Size ${size} /Root 1 0 R /Info ${infoNumber} 0 R >>\nstartxref\n`),
+    'the trailer does not declare the right size, root and info object',
+  );
+  assert.ok(
+    text.includes(`xref\n0 ${size}\n0000000000 65535 f \n`),
+    'the free entry is not the conventional 65535 generation',
+  );
+});
+
+test('a page without an explicit size falls back to the A4 media box', () => {
+  const stream = pageContentStream({ polylines: [] });
+  assert.ok(stream.includes('0 0 595.28 841.89 re'), 'the content stream did not default to A4');
+
+  const text = pdfText(buildPdf([{ polylines: [] }], { title: 'Test' }));
+  assert.ok(text.includes('/MediaBox [0 0 595.28 841.89]'), 'the page object did not default to A4');
 });
 
 test('every stream length matches its declared /Length', () => {
@@ -1502,12 +1551,28 @@ test('pageContentStream emits B for filled paths and S for stroke-only ones', ()
   assert.ok(/\nS(\n|$)/.test(stream), 'no stroke-only path was emitted');
 });
 
+test('pageContentStream skips a polyline it cannot draw', () => {
+  const stream = pageContentStream({
+    polylines: [
+      { points: [[10, 20]], closed: false, fill: false, width: 4 },
+      { points: 'not points', closed: false, fill: false, width: 4 },
+      { points: [[30, 40], [50, 60]], closed: false, fill: false, width: 4 },
+    ],
+    width: 595.28,
+    height: 841.89,
+  });
+  assert.ok(!stream.includes('10 821.89 m'), 'a single-point polyline was drawn');
+  assert.ok(stream.includes('30 801.89 m'), 'the drawable polyline was dropped');
+  assert.equal((stream.match(/ m$/gm) || []).length, 1, 'more than one path was started');
+});
+
 test('pdfTextString escapes ASCII and encodes non-ASCII as UTF-16BE', () => {
   assert.equal(pdfTextString('Amara'), '(Amara)');
   assert.equal(pdfTextString('a(b)c'), '(a\\(b\\)c)');
   assert.equal(pdfTextString('back\\slash'), '(back\\\\slash)');
   assert.equal(pdfTextString('Zo\u00eb'), '<FEFF005A006F00EB>');
   assert.equal(pdfTextString('\u00c9'), '<FEFF00C9>');
+  assert.equal(pdfTextString('\u{1F600}'), '<FEFFD83DDE00>', 'an astral character was not split into a surrogate pair');
 });
 
 test('buildPdf encodes a non-ASCII title as a hex string', () => {
