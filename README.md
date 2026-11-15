@@ -13,23 +13,32 @@ No backend, no third-party libraries.
 
 ## Using it
 
-**Download and open.** `dist/colouring-book.html` is the whole app in one file.
-Save it, double-click it, and it runs from disk with no server and no install.
-That is the intended way to use it.
+**Download the app and open it.** It is one file. No install, no server, no
+build step, no terminal:
 
-**Or run the source.** For development:
+<https://github.com/hanoisolo/children-colouring-book/raw/master/dist/colouring-book.html>
+
+Save it anywhere and double-click it. It runs from disk, offline, in vector
+mode. That is the app — everything below is for people working on it.
+
+## Development
+
+You do not need any of this to use the app.
+
+**Running the source.** `index.html` loads `app.js` as an ES module, and a
+browser refuses to fetch a module from a `file://` page because the origin is
+opaque. So the source form needs a server:
 
 ```
 npm start
 ```
 
-Then open <http://localhost:8000>. This form needs the server: the app is ES
-modules, and a browser refuses to fetch a module from a `file://` page because
-the origin is opaque. `serve.js` is a small zero-dependency static server that
-exists only to avoid that. The page says so instead of failing silently.
+Then open <http://localhost:8000>. `serve.js` is a small zero-dependency static
+server that exists only to avoid that restriction, and the page says so instead
+of failing silently. The single-file build has no such problem because the
+bundler inlines every module into one classic script.
 
-There is no `npm install`. `index.html` loads `app.js` as an ES module, and
-`app.js` imports the rest of `src/` directly.
+There is no `npm install`. `app.js` imports the rest of `src/` directly.
 
 **Rebuilding the single file** after changing anything in `src/`, `app.js`,
 `styles.css` or `index.html`:
@@ -40,7 +49,9 @@ npm run build
 
 `build.js` inlines the stylesheet and all ten modules into one classic script.
 It is not a general-purpose bundler; it handles this project's import graph and
-nothing else.
+nothing else. **The rebuild is a discipline, not a check** — no test can tell
+that `dist/colouring-book.html` is stale, so a change to `src/` without a
+rebuild ships a stale app.
 
 ## Two ways to draw the art
 
@@ -93,7 +104,7 @@ npm test
 
 Two layers:
 
-- `node test_colouring_book.js` — 237 tests, no dependencies. Runs offline in
+- `node test_colouring_book.js` — 267 tests, no dependencies. Runs offline in
   Node and covers the whole pipeline headlessly, calling the same functions the
   browser calls. Image mode is tested against a stubbed `fetch`, so the suite
   never reaches the network and never bills a key.
@@ -172,12 +183,12 @@ whenever it is closed *or* filled.
 ## Project layout
 
 ```
-index.html              the app
+dist/
+  colouring-book.html   THE APP: one file, opens from disk, no server
+index.html              the source form (needs a server; development only)
 styles.css              layout and print stylesheet
 app.js                  DOM controller
 build.js                bundler for the single-file build
-dist/
-  colouring-book.html   the shipped app: one file, opens from disk
 serve.js                zero-dependency static server for local development
 smoke.html              browser smoke-test fixture
 src/                    the pipeline, in dependency order
