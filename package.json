@@ -5,6 +5,7 @@
   "type": "module",
   "description": "Personalised children's colouring book generator: a theme and a child's name in, a six-page A4 PDF out.",
   "scripts": {
+    "start": "node serve.js",
     "test": "node test_colouring_book.js"
   }
 }

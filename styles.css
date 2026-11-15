@@ -118,6 +118,20 @@ button:not(:disabled):hover {
   font-weight: 600;
 }
 
+.boot-error {
+  margin: 0 0 1.5rem;
+  padding: 0.9rem 1rem;
+  border: 2px solid #a3231b;
+  border-radius: 6px;
+  color: #a3231b;
+  background: #fdf2f1;
+  font-weight: 600;
+}
+
+.boot-error code {
+  font-weight: 400;
+}
+
 .book {
   margin-top: 2rem;
 }

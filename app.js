@@ -13,6 +13,13 @@
 
 import { generateBook } from './src/book.js';
 
+// The inline boot check in index.html reads this. A page opened over file://
+// cannot fetch a module at all, so this never runs there and the notice
+// explains why nothing generated.
+if (typeof window !== 'undefined') {
+  window.__bookBooted = true;
+}
+
 /**
  * Replace the preview grid with one card per book page.
  *

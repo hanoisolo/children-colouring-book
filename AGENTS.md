@@ -33,6 +33,7 @@ libraries, no build step.
 | `index.html` | Form, status, error, preview grid, download control |
 | `styles.css` | Layout and print-friendly presentation |
 | `app.js` | DOM controller: validate, generate, preview, download |
+| `serve.js` | Zero-dependency static server for local development (`npm start`) |
 | `src/rng.js` | `hashString` (32-bit) and `makeRng` (seeded PRNG) |
 | `src/themes.js` | Theme normalisation, stopwords, 20+ motif vocabulary, fallback |
 | `src/motifs.js` | Procedural motif polyline generators in `0..1` boxes |
@@ -85,12 +86,18 @@ This invariant is never weakened, skipped, or broadened to make a suite pass.
 - No test may open a browser, spawn a dialog, bind a port, or make an HTTP request.
 - `src/pdf.js` must return a `Uint8Array` and use no Node-only APIs, so the same
   code runs in the browser.
+- **The app must be served over HTTP.** A browser refuses to fetch an ES module
+  from a `file://` page because the origin is opaque, so opening `index.html`
+  from disk silently does nothing. `npm start` runs `serve.js`. `index.html`
+  carries a classic-script boot check that reveals a `.boot-error` notice when
+  `app.js` never evaluates, so this failure is never silent again. Do not
+  remove that notice or the `window.__bookBooted` signal in `app.js`.
 
 ## Status
 
 - **Phase 3 complete. All three roadmap phases are done; the project is ship-ready.**
 - Roadmap: `plans/MASTER_ROADMAP.md` (3 phases x 3 segments).
-- Gate: `node test_colouring_book.js` -> 147 tests, 441 assertions, 0 failures,
+- Gate: `node test_colouring_book.js` -> 151 tests, 454 assertions, 0 failures,
   0 skipped.
 - Landed: `package.json`, `src/rng.js`, `src/themes.js`, `src/motifs.js`,
   `src/lettering.js`, `src/page.js`, `src/cover.js`, `src/pdf.js`, `src/book.js`,

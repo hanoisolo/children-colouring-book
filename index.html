@@ -13,6 +13,12 @@
   </header>
 
   <main class="layout">
+    <p class="boot-error" hidden>
+      This app has to be served over HTTP. Opening <code>index.html</code> straight
+      from disk blocks ES modules, so nothing will generate. Run
+      <code>npm start</code> and open <code>http://localhost:8000</code>.
+    </p>
+
     <form class="book-form" novalidate>
       <div class="field">
         <label for="theme-input">Theme</label>
@@ -58,6 +64,20 @@
     </section>
   </main>
 
+  <script>
+    // A classic script, so it runs even when the module below cannot be
+    // fetched. app.js sets the flag once it evaluates; if it never does, the
+    // page says why instead of failing silently.
+    window.__bookBooted = false;
+    setTimeout(function () {
+      if (!window.__bookBooted) {
+        var notice = document.querySelector('.boot-error');
+        if (notice) {
+          notice.hidden = false;
+        }
+      }
+    }, 1500);
+  </script>
   <script type="module" src="app.js"></script>
 </body>
 </html>

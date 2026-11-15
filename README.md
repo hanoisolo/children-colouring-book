@@ -9,12 +9,21 @@ as a PDF.
 - **Name** — up to 20 characters. It goes on the cover, drawn as thick vector
   strokes a child can colour in.
 
-No server, no network calls, no third-party libraries, no build step. Open
-`index.html` and it works.
+No backend, no network calls, no third-party libraries, no build step.
 
 ## Running it
 
-Open `index.html` in a modern browser. That is the whole install.
+```
+npm start
+```
+
+Then open <http://localhost:8000>.
+
+Opening `index.html` straight from disk does **not** work, and the page now says
+so instead of failing silently. The app is ES modules, and a browser refuses to
+fetch a module from a `file://` page because the origin is opaque — the console
+shows a CORS error and nothing generates. `serve.js` is a small zero-dependency
+static server that exists only to avoid that.
 
 There is no bundler and no `npm install`. `index.html` loads `app.js` as an ES
 module, and `app.js` imports the rest of `src/` directly.
@@ -25,7 +34,7 @@ module, and `app.js` imports the rest of `src/` directly.
 node test_colouring_book.js
 ```
 
-147 tests, 441 assertions, no dependencies. The suite runs offline in Node and
+151 tests, 454 assertions, no dependencies. The suite runs offline in Node and
 covers the whole pipeline headlessly — the same functions the browser calls.
 
 ## How it works
@@ -83,6 +92,7 @@ whenever it is closed *or* filled.
 index.html              the app
 styles.css              layout and print stylesheet
 app.js                  DOM controller
+serve.js                zero-dependency static server for local development
 src/                    the pipeline, in dependency order
 test_colouring_book.js  the whole suite
 plans/                  roadmap, milestone reviews, Stage 6 evidence

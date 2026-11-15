@@ -59,6 +59,8 @@ import {
 
 import './app.js';
 
+import { resolveRequestPath } from './serve.js';
+
 import {
   MAIN_WEIGHT,
   DETAIL_WEIGHT,
@@ -594,6 +596,41 @@ test('index.html declares exactly the eight contract IDs', () => {
   const html = readSource('./index.html');
   const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]).sort();
   assert.deepEqual(ids, [...CONTRACT_IDS].sort());
+});
+
+test('index.html warns when the module cannot load', () => {
+  const html = readSource('./index.html');
+  assert.ok(/class="boot-error"/.test(html), 'index.html has no boot-error notice');
+  assert.ok(
+    /class="boot-error"[^>]*\bhidden\b/.test(html),
+    'the boot-error notice is not hidden by default',
+  );
+  const notice = html.slice(html.indexOf('class="boot-error"'), html.indexOf('class="boot-error"') + 400);
+  assert.ok(/http/i.test(notice), 'the notice does not tell the user to serve over HTTP');
+});
+
+test('index.html runs the boot check without needing a module', () => {
+  const html = readSource('./index.html');
+  const bootIndex = html.indexOf('__bookBooted');
+  const moduleIndex = html.indexOf('type="module"');
+  assert.ok(bootIndex > -1, 'index.html has no boot check');
+  assert.ok(moduleIndex > -1, 'index.html does not load app.js as a module');
+  assert.ok(bootIndex < moduleIndex, 'the boot check runs after the module script, so it cannot detect a failure');
+});
+
+test('app.js signals that the module loaded', () => {
+  const source = readSource('./app.js');
+  assert.ok(source.includes('__bookBooted'), 'app.js never signals a successful module load');
+});
+
+test('the dev server refuses to serve outside the project root', () => {
+  const root = process.cwd();
+  assert.ok(resolveRequestPath(root, '/index.html'), 'index.html was refused');
+  assert.ok(resolveRequestPath(root, '/'), 'the root path did not resolve to index.html');
+  assert.equal(resolveRequestPath(root, '/../secret'), null, 'a parent traversal was allowed');
+  assert.equal(resolveRequestPath(root, '/src/../../secret'), null, 'a nested traversal was allowed');
+  assert.equal(resolveRequestPath(root, '/%2e%2e/secret'), null, 'an encoded traversal was allowed');
+  assert.equal(resolveRequestPath(root, '/%'), null, 'a malformed escape was not rejected');
 });
 
 test('every selector app.js queries exists verbatim in index.html', () => {
