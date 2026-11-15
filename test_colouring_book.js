@@ -2570,6 +2570,80 @@ test('a long name wraps and grows the band instead of overflowing', async () => 
   );
 });
 
+test('the cover band is a closed white rectangle spanning the page width', async () => {
+  const fetchImpl = fakeFetch(() => imageResponseFor(makeJpeg()));
+  const book = await generateImageBook({ theme: 'x', name: 'Amara', apiKey: 'k', fetchImpl });
+  const band = book.cover.pdfPage.polylines[0];
+
+  assert.deepEqual(band.points, [
+    [0, 0],
+    [PAGE_WIDTH, 0],
+    [PAGE_WIDTH, book.cover.bandHeight],
+    [0, book.cover.bandHeight],
+  ]);
+  assert.equal(band.closed, true, 'the band is not closed');
+  assert.equal(band.fill, true, 'the band is not filled');
+  assert.equal(band.stroke, false, 'the band is stroked, so the name sits in a box');
+  assert.equal(band.width, 4);
+});
+
+test('the band height is the fitted name block plus its padding', async () => {
+  const fetchImpl = fakeFetch(() => imageResponseFor(makeJpeg()));
+  const book = await generateImageBook({
+    theme: 'x',
+    name: 'Maximilian Alexander',
+    apiKey: 'k',
+    fetchImpl,
+  });
+  const { nameLines, nameSize, bandHeight } = book.cover;
+
+  assert.ok(nameLines.length >= 2, 'the name did not wrap, so the line gap is untested');
+
+  const lineGap = nameSize * 1.35;
+  const blockHeight = (nameLines.length - 1) * lineGap + nameSize;
+  const padding = nameSize * 0.35;
+
+  assert.equal(bandHeight, blockHeight + 2 * padding);
+});
+
+test('the band is fitted to the page width minus the inset on both sides', async () => {
+  // A layout contract, not aesthetic tuning: the inset is what keeps the name
+  // clear of the illustration's edges. Changing it is a deliberate design
+  // change, and this assertion is where that change gets recorded.
+  assert.equal(COVER_BAND_INSET, 40);
+
+  const fetchImpl = fakeFetch(() => imageResponseFor(makeJpeg()));
+  const book = await generateImageBook({
+    theme: 'x',
+    name: 'Maximilian Alexander',
+    apiKey: 'k',
+    fetchImpl,
+  });
+
+  const expected = fitName('Maximilian Alexander', {
+    maxWidth: PAGE_WIDTH - 2 * COVER_BAND_INSET,
+  });
+
+  assert.deepEqual(book.cover.nameLines, expected.lines);
+  assert.equal(book.cover.nameSize, expected.size);
+});
+
+test('each name line is centred on the page', async () => {
+  const fetchImpl = fakeFetch(() => imageResponseFor(makeJpeg()));
+  const book = await generateImageBook({ theme: 'x', name: 'Amara', apiKey: 'k', fetchImpl });
+
+  const strokes = book.cover.pdfPage.polylines.slice(1);
+  assert.ok(strokes.length > 0, 'the name produced no strokes');
+
+  const xs = strokes.flatMap((polyline) => polyline.points.map(([x]) => x));
+  const centre = (Math.min(...xs) + Math.max(...xs)) / 2;
+
+  assert.ok(
+    Math.abs(centre - PAGE_WIDTH / 2) < 1e-6,
+    `the name is centred at ${centre}, not ${PAGE_WIDTH / 2}`,
+  );
+});
+
 test('the cover image is aspect-fitted, not stretched', async () => {
   const jpeg = makeJpeg({ width: 896, height: 1200 });
   const fetchImpl = fakeFetch(() => imageResponseFor(jpeg));
