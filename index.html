@@ -16,7 +16,8 @@
     <p class="boot-error" hidden>
       This app has to be served over HTTP. Opening <code>index.html</code> straight
       from disk blocks ES modules, so nothing will generate. Run
-      <code>npm start</code> and open <code>http://localhost:8000</code>.
+      <code>npm start</code> and open <code>http://localhost:8000</code>, or use the
+      single-file build in <code>dist/colouring-book.html</code>, which needs no server.
     </p>
 
     <form class="book-form" novalidate>
@@ -46,9 +47,28 @@
         <p class="hint">Letters, spaces, hyphens and apostrophes. Up to 20 characters.</p>
       </div>
 
+      <div class="field">
+        <label>
+          Gemini API key <span class="optional">(optional)</span>
+          <input
+            data-role="api-key"
+            name="apiKey"
+            type="password"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="AIza&hellip;">
+        </label>
+        <p class="hint">
+          With a key, the six pages are drawn by Gemini&rsquo;s cheapest image model.
+          Without one, the book is drawn offline as vector art. The key stays in this
+          tab and is sent only to <code>generativelanguage.googleapis.com</code>.
+        </p>
+      </div>
+
       <button id="generate-btn" type="submit">Generate book</button>
     </form>
 
+    <p data-role="cost-note" class="cost-note"></p>
     <p id="status" class="status" aria-live="polite"></p>
     <p id="error" class="error" role="alert"></p>
 

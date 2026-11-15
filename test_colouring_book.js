@@ -2587,3 +2587,34 @@ test('composeImageCover rejects bytes that are not a JPEG', () => {
     /not a JPEG/,
   );
 });
+
+test('app.js wires the image pipeline behind the key field', () => {
+  const source = readSource('./app.js');
+  assert.ok(source.includes('generateImageBook'), 'app.js never calls generateImageBook');
+  assert.ok(source.includes('[data-role="api-key"]'), 'app.js never reads the key field');
+  assert.ok(source.includes('[data-role="cost-note"]'), 'app.js never writes the cost note');
+  assert.ok(source.includes('estimateImageCost'), 'app.js never shows the cost');
+  assert.ok(
+    source.includes('generateBtn.disabled = true'),
+    'app.js does not lock the generate button during a request',
+  );
+  assert.ok(
+    source.includes('data:${card.image.mimeType};base64,'),
+    'app.js does not build an image data URL',
+  );
+  assert.ok(
+    source.includes('card.image.rect'),
+    'app.js does not position the image with the shared rect',
+  );
+});
+
+test('index.html offers the key field and the cost note without new ids', () => {
+  const html = readSource('./index.html');
+  assert.ok(html.includes('data-role="api-key"'), 'no key field');
+  assert.ok(html.includes('data-role="cost-note"'), 'no cost note');
+  assert.ok(html.includes('type="password"'), 'the key field is not masked');
+  assert.ok(
+    html.includes('generativelanguage.googleapis.com'),
+    'the page does not say where the key goes',
+  );
+});

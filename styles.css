@@ -164,6 +164,48 @@ button:not(:disabled):hover {
   font-weight: 600;
 }
 
+.optional {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.cost-note {
+  margin: 1rem 0 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+/*
+ * An image card is a page-shaped frame. The JPEG is positioned inside it by the
+ * same rect the PDF uses, and the overlay SVG covers the whole page, so the
+ * preview and the print cannot disagree about where the artwork and the name
+ * sit.
+ */
+.page-frame {
+  position: relative;
+  flex: 1 1 auto;
+  width: 100%;
+  aspect-ratio: 595.28 / 841.89;
+  overflow: hidden;
+  background: var(--paper);
+}
+
+.page-image {
+  position: absolute;
+  display: block;
+}
+
+.page-overlay {
+  position: absolute;
+  inset: 0;
+}
+
+.page-overlay svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 .motif-list {
   margin: 0;
   font-size: 0.85rem;
@@ -179,6 +221,7 @@ button:not(:disabled):hover {
   .book-form,
   .status,
   .error,
+  .cost-note,
   #download-btn {
     display: none;
   }
