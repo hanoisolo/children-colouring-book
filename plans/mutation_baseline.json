@@ -2,29 +2,29 @@
   "files": {
     "app.js": {
       "invalid": 0,
-      "killed": 5,
-      "survived": 4
+      "killed": 0,
+      "survived": 3
     },
-    "src/cover.js": {
+    "src/book.js": {
       "invalid": 0,
-      "killed": 26,
-      "survived": 31
-    },
-    "src/lettering.js": {
-      "invalid": 0,
-      "killed": 84,
-      "survived": 34
+      "killed": 29,
+      "survived": 0
     },
     "src/motifs.js": {
       "invalid": 0,
-      "killed": 154,
-      "survived": 34
+      "killed": 10,
+      "survived": 2
     },
     "src/page.js": {
       "invalid": 0,
-      "killed": 19,
-      "survived": 9
+      "killed": 1,
+      "survived": 0
+    },
+    "src/pdf.js": {
+      "invalid": 0,
+      "killed": 52,
+      "survived": 2
     }
   },
-  "timestamp": "2026-11-15T04:20:19Z"
+  "timestamp": "2026-11-15T04:34:25Z"
 }
