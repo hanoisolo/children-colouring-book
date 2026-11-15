@@ -29,20 +29,26 @@ die() { printf 'release: %s\n' "$*" >&2; exit 1; }
 
 hash_of() { sha256sum "$1" | cut -d' ' -f1; }
 
+# Global, not local: the EXIT trap below fires after verify_published has
+# returned, so a `local` would already be out of scope and `set -u` would abort
+# the script with "tmp: unbound variable" — reporting failure on a run that
+# actually succeeded.
+TMPFILE=""
+trap 'rm -f "$TMPFILE"' EXIT
+
 verify_published() {
-  local expected actual tmp
+  local expected actual
   [ -f "$DIST" ] || die "$DIST is missing; run 'node build.js' first"
 
   expected="$(hash_of "$DIST")"
-  tmp="$(mktemp)"
-  trap 'rm -f "$tmp"' EXIT
+  TMPFILE="$(mktemp)"
 
   say "downloading $LATEST"
-  if ! curl -fsSL "$LATEST" -o "$tmp"; then
+  if ! curl -fsSL "$LATEST" -o "$TMPFILE"; then
     die "could not download the latest release asset"
   fi
 
-  actual="$(hash_of "$tmp")"
+  actual="$(hash_of "$TMPFILE")"
   if [ "$expected" != "$actual" ]; then
     die "the published asset does not match $DIST
   dist:      $expected
