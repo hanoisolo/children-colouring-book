@@ -93,7 +93,7 @@ npm test
 
 Two layers:
 
-- `node test_colouring_book.js` — 226 tests, no dependencies. Runs offline in
+- `node test_colouring_book.js` — 237 tests, no dependencies. Runs offline in
   Node and covers the whole pipeline headlessly, calling the same functions the
   browser calls. Image mode is tested against a stubbed `fetch`, so the suite
   never reaches the network and never bills a key.

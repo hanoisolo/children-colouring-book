@@ -3,7 +3,12 @@
     "app.js": {
       "invalid": 0,
       "killed": 0,
-      "survived": 3
+      "survived": 1
+    },
+    "build.js": {
+      "invalid": 3,
+      "killed": 12,
+      "survived": 5
     },
     "src/book.js": {
       "invalid": 0,

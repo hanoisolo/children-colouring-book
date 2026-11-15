@@ -73,7 +73,7 @@ npm test
 That runs two layers:
 
 ```
-node test_colouring_book.js   # 226 unit tests, no browser, ~300ms
+node test_colouring_book.js   # 237 unit tests, no browser, ~320ms
 node test_browser.js          # 3 browser tests, needs Edge or Chrome, ~3.3s
 ```
 
@@ -224,7 +224,7 @@ then fixed.
 
 - **Upgrade complete: image mode and the downloadable single file are shipped.**
 - Baseline before the upgrade: `d846283`, 151 unit tests + 1 browser test.
-- Gate: `npm test` -> 226 unit tests + 3 browser tests, 0 failures, 0 skipped.
+- Gate: `npm test` -> 237 unit tests + 3 browser tests, 0 failures, 0 skipped.
 - Landed in the upgrade: `src/imagegen.js`, `build.js`,
   `dist/colouring-book.html`; modified `src/pdf.js`, `src/book.js`,
   `src/page.js`, `index.html`, `app.js`, `styles.css`, `package.json`,
@@ -233,6 +233,44 @@ then fixed.
   the offline promise and 151 baseline tests.
 - Evidence trail: `plans/upgrade_brief.md`, `plans/upgrade_plan.md`,
   `plans/upgrade_review.md`, `plans/stage6_scan.md`, `plans/mutation_report.md`.
+- Stage 6 assertion scan: `SCAN: PASS` against `d846283` — 253 assertions added,
+  3 removed and justified in `plans/removal_justification.md` (all three were
+  moved verbatim into `readReport()`, which now runs them in three tests instead
+  of one).
+- Stage 6 mutation gate: `MUTATION: REVIEW`. `app.js` survivors went 3 -> 15 on
+  the first pass, which was a real regression: the new status and cost strings
+  were built inline in the submit handler where the unit suite cannot reach
+  them. They were extracted into `costNoteText`, `drawingStatusText`,
+  `readyStatusText`, `hasApiKey` and `submitUiState` in `src/book.js`, and
+  `app.js` survivors fell to **1**, below the previous baseline. The baseline
+  records that improvement plus the new `build.js` entry.
+
+### The mutation gate cannot see `src/` on this project
+
+Worth knowing before reading a score off `plans/mutation_report.md`.
+`run_mutation_pass` walks changed files in alphabetical order and stops at
+`--mutation-max` (default 200). `dist/colouring-book.html` sorts before `src/`
+and carries ~3500 added lines, so it consumes the entire budget and
+`src/book.js`, `src/imagegen.js`, `src/pdf.js` and `src/page.js` are never
+mutated. The reported score (6.1%) is an artifact of that ordering, not a
+measurement of the new logic — 179 of the 185 survivors are generated HTML and
+CSS.
+
+Two consequences:
+
+1. **Do not read the headline score as coverage.** Read the per-file section.
+   The only files the gate actually measured this upgrade were `app.js` and
+   `build.js`.
+2. **The gate rewrites `plans/mutation_baseline.json` on a non-regressing run,
+   and it replaces the file rather than merging.** A run that never reached
+   `src/` therefore *deletes* the `src/` entries, so the ratchet forgets the
+   coverage it was built to protect. The baseline was restored by hand and
+   merged rather than accepted as written. Check `git diff` on that file after
+   every mutation run; if `src/` entries vanished, restore and merge.
+
+`dist/colouring-book.html` is deliberately absent from the baseline. Recording
+179 survivors of generated output would bless a meaningless number and let the
+bundle's noise mask a real source regression.
 - **Phase 3 complete. All three roadmap phases are done; the project is ship-ready.**
 - Roadmap: `plans/MASTER_ROADMAP.md` (3 phases x 3 segments).
 - Pre-ship security audit: `AUDIT: PASS` (`plans/security_audit.md`). The first
