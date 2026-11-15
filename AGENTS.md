@@ -94,8 +94,11 @@ This invariant is never weakened, skipped, or broadened to make a suite pass.
 - Landed so far: `package.json`, `src/rng.js`, `src/themes.js`, `src/motifs.js`,
   `src/lettering.js`, `src/page.js`, `src/cover.js`, `index.html`, `styles.css`,
   `app.js`, `test_colouring_book.js`, `.gitattributes`.
-- Phase 1 milestone review: `AUDIT: PASS` (`plans/milestone_review.md`).
-- Phase 2 milestone review: `AUDIT: PASS` (`plans/milestone_review.md`).
+- Phase 1 milestone review: `AUDIT: PASS` (`plans/milestone_review_phase1.md`).
+- Phase 2 milestone review: `AUDIT: PASS` (`plans/milestone_review_phase2.md`).
+  `plans/milestone_brief.md` is the working brief for the phase currently under
+  review; each completed phase's verdict is archived as
+  `plans/milestone_review_phaseN.md`.
 - Phase 2 Stage 6: `SCAN: PASS` (200 assertions added, 4 removed and justified
   in `plans/removal_justification.md`); mutation 72.0% (288 killed, 112
   survived) recorded in `plans/mutation_baseline.json`.
