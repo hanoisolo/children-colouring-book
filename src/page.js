@@ -216,14 +216,19 @@ function escapeXml(value) {
 /**
  * SVG path data for one polyline.
  *
- * @param {{ points: Array<[number, number]>, closed?: boolean }} line
+ * A filled path is closed explicitly even when `closed` is false, because the
+ * PDF writer has to do the same: PDF's `B` operator implicitly closes an open
+ * path, so leaving the SVG to close it implicitly would let the two renderers
+ * disagree about the geometry.
+ *
+ * @param {{ points: Array<[number, number]>, closed?: boolean, fill?: boolean }} line
  * @returns {string}
  */
 export function polylineToPathData(line) {
   const parts = line.points.map(
     ([x, y], i) => `${i === 0 ? 'M' : 'L'}${formatNumber(x)} ${formatNumber(y)}`,
   );
-  if (line.closed) {
+  if (line.closed || line.fill) {
     parts.push('Z');
   }
   return parts.join(' ');

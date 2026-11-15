@@ -59,9 +59,10 @@ export function polygon(points, options = {}) {
  * @param {number} cy
  * @param {number} r
  * @param {number} [segments]
+ * @param {{ fill?: boolean, weight?: number }} [options]
  */
-export function circle(cx, cy, r, segments = 24) {
-  return polygon(ellipsePoints(cx, cy, r, r, segments));
+export function circle(cx, cy, r, segments = 24, options = {}) {
+  return polygon(ellipsePoints(cx, cy, r, r, segments), options);
 }
 
 /**
@@ -72,9 +73,10 @@ export function circle(cx, cy, r, segments = 24) {
  * @param {number} rx
  * @param {number} ry
  * @param {number} [segments]
+ * @param {{ fill?: boolean, weight?: number }} [options]
  */
-export function ellipse(cx, cy, rx, ry, segments = 24) {
-  return polygon(ellipsePoints(cx, cy, rx, ry, segments));
+export function ellipse(cx, cy, rx, ry, segments = 24, options = {}) {
+  return polygon(ellipsePoints(cx, cy, rx, ry, segments), options);
 }
 
 /**
@@ -163,7 +165,7 @@ const MOTIF_GENERATORS = {
       polygon([[0.5, 0.02], [0.68, 0.3], [0.68, 0.72], [0.32, 0.72], [0.32, 0.3]]),
       polygon([[0.32, 0.5], [0.14, 0.78], [0.32, 0.72]]),
       polygon([[0.68, 0.5], [0.86, 0.78], [0.68, 0.72]]),
-      circle(0.5, 0.36, 0.09, 16),
+      circle(0.5, 0.36, 0.09, 16, { fill: true }),
       stroke([[0.42, 0.78], [0.5, 0.94], [0.58, 0.78]]),
       stroke([[0.4, 0.86], [0.5, 0.99], [0.6, 0.86]], { weight: DETAIL_WEIGHT }),
     ];
@@ -295,8 +297,8 @@ const MOTIF_GENERATORS = {
   house(rng) {
     return [
       polygon([[0.16, 0.5], [0.16, 0.94], [0.84, 0.94], [0.84, 0.5]]),
-      polygon([[0.08, 0.52], [0.5, 0.12], [0.92, 0.52]]),
-      polygon([[0.42, 0.94], [0.42, 0.68], [0.58, 0.68], [0.58, 0.94]]),
+      polygon([[0.08, 0.52], [0.5, 0.12], [0.92, 0.52]], { fill: true }),
+      polygon([[0.42, 0.94], [0.42, 0.68], [0.58, 0.68], [0.58, 0.94]], { fill: true }),
       polygon([[0.22, 0.6], [0.34, 0.6], [0.34, 0.72], [0.22, 0.72]]),
       stroke([[0.66, 0.62], [0.78, 0.62]], { weight: DETAIL_WEIGHT }),
       stroke([[0.66, 0.7], [0.78, 0.7]], { weight: DETAIL_WEIGHT }),
@@ -345,8 +347,8 @@ const MOTIF_GENERATORS = {
   car(rng) {
     return [
       polygon([[0.06, 0.66], [0.06, 0.5], [0.24, 0.5], [0.34, 0.3], [0.66, 0.3], [0.76, 0.5], [0.94, 0.5], [0.94, 0.66]]),
-      circle(0.28, 0.68, 0.1, 16),
-      circle(0.72, 0.68, 0.1, 16),
+      circle(0.28, 0.68, 0.1, 16, { fill: true }),
+      circle(0.72, 0.68, 0.1, 16, { fill: true }),
       stroke([[0.38, 0.34], [0.38, 0.48]], { weight: DETAIL_WEIGHT }),
       stroke([[0.62, 0.34], [0.62, 0.48]], { weight: DETAIL_WEIGHT }),
       stroke([[0.06, 0.56], [0.94, 0.56]], { weight: DETAIL_WEIGHT }),
