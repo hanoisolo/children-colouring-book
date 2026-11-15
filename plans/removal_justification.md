@@ -85,3 +85,78 @@ asserts at least as much as the original.
 - Test declarations: 29 added, 5 removed.
 - Suite size: 117 tests at the Phase 2 baseline, 136 tests now, 0 skipped,
   0 todo.
+
+---
+
+# Stage 6 removal justification — image mode upgrade
+
+Baseline: `d846283` (last commit before the upgrade). Diff:
+`plans/stage6_test.diff`.
+
+The scan reports 3 removed assertions, all in `test_browser.js`. None was
+weakened, deleted, or broadened. All three were **moved verbatim** into a shared
+helper so that three tests can use them instead of one.
+
+## The three findings
+
+```
+assert.ok(titleMatch, 'the smoke page produced no title, so it never reported');
+assert.notEqual(titleMatch[1], 'PENDING', 'the smoke page never finished driving the form');
+assert.equal(report.failure, undefined, `the smoke page failed: ${report.failure}`);
+```
+
+## What actually happened
+
+Before the upgrade, `test_browser.js` had one test, and those three assertions
+sat inline in its body. The upgrade adds two more tests that drive the same
+smoke page, so the title-parsing and failure-reporting checks were extracted
+into `readReport(dom)`:
+
+```js
+function readReport(dom) {
+  const titleMatch = /<title>([^<]*)<\/title>/.exec(dom);
+  assert.ok(titleMatch, 'the smoke page produced no title, so it never reported');
+  assert.notEqual(titleMatch[1], 'PENDING', 'the smoke page never finished driving the form');
+  const report = JSON.parse(decodeURIComponent(titleMatch[1]));
+  assert.equal(report.failure, undefined, `the smoke page failed: ${report.failure}`);
+  return report;
+}
+```
+
+The three assertion lines are character-for-character identical to the removed
+ones, including their messages. The only change is their location.
+
+## Why this is stronger, not weaker
+
+| | Before | After |
+| :--- | :--- | :--- |
+| Tests calling these assertions | 1 | 3 |
+| Assertion executions per run | 3 | 9 |
+| Assertions removed outright | — | 0 |
+
+Every test that reads a smoke-page report now fails if the page produced no
+title, if it never finished, or if it reported a failure. Previously only the
+vector test did. The image test and the built-file test would have silently
+accepted a `PENDING` title without this move.
+
+## The baseline assertions are untouched
+
+The vector test's own assertions — the exact status string
+`Ready: a cover and 5 pages for Amara.`, six previews, six SVGs, the enabled
+download, the book title, and the hidden boot notice — are unchanged in text and
+in strictness. `assert.match(report.status, /^Ready: a cover and 5 pages for
+Amara\.$/)` still pins the exact string, which is why image mode had to keep the
+vector status format and append the cost rather than replace it.
+
+## Upgrade totals
+
+- Assertions: 253 added, 3 removed (all three relocated, none lost).
+- Test declarations: 89 added, 0 removed.
+- Suite size: 151 unit + 1 browser at the baseline, 226 unit + 3 browser now,
+  0 skipped, 0 todo.
+
+## Verdict
+
+`AUDIT: PASS` — the three removals are relocations of identical assertions into
+a helper that increases their coverage from one test to three. No assertion was
+weakened, skipped, deleted, or broadened.
