@@ -61,6 +61,9 @@ import {
   generateBook,
   generateImageBook,
   composeImageCover,
+  costNoteText,
+  drawingStatusText,
+  readyStatusText,
 } from './src/book.js';
 
 import {
@@ -806,9 +809,12 @@ test('every export in src/book.js is imported by this suite', () => {
     'PAGE_COUNT',
     'bookDiversity',
     'composeImageCover',
+    'costNoteText',
+    'drawingStatusText',
     'generateBook',
     'generateImageBook',
     'planBookPages',
+    'readyStatusText',
     'sanitiseFilename',
     'validateInputs',
   ];
@@ -2631,7 +2637,7 @@ test('app.js wires the image pipeline behind the key field', () => {
   assert.ok(source.includes('generateImageBook'), 'app.js never calls generateImageBook');
   assert.ok(source.includes('[data-role="api-key"]'), 'app.js never reads the key field');
   assert.ok(source.includes('[data-role="cost-note"]'), 'app.js never writes the cost note');
-  assert.ok(source.includes('estimateImageCost'), 'app.js never shows the cost');
+  assert.ok(source.includes('costNoteText'), 'app.js never shows the cost');
   assert.ok(
     source.includes('generateBtn.disabled = true'),
     'app.js does not lock the generate button during a request',
@@ -2769,4 +2775,34 @@ test('the build is deterministic', () => {
   build();
   const second = readSource('./dist/colouring-book.html');
   assert.equal(first, second, 'two builds produced different bytes');
+});
+
+test('costNoteText quotes the model, the image count and the price', () => {
+  const withKey = costNoteText(true);
+  assert.match(withKey, /^6 images with gemini-3\.1-flash-lite-image, about \$0\.20 per book\.$/);
+  assert.equal(costNoteText(false), 'No key: the book is drawn offline as vector art, at no cost.');
+});
+
+test('costNoteText prices the same count the book actually generates', () => {
+  const quoted = Number(/\$(\d+\.\d\d)/.exec(costNoteText(true))[1]);
+  assert.equal(quoted, Number(estimateImageCost(PAGE_COUNT + 1).toFixed(2)));
+});
+
+test('drawingStatusText names the image count', () => {
+  assert.equal(drawingStatusText(), 'Drawing 6 pictures. This takes a few seconds.');
+});
+
+test('readyStatusText keeps the vector wording byte-identical to the baseline', () => {
+  const book = { mode: 'vector', pages: new Array(PAGE_COUNT), name: 'Amara' };
+  assert.equal(readyStatusText(book), 'Ready: a cover and 5 pages for Amara.');
+});
+
+test('readyStatusText appends the cost for an image book', () => {
+  const book = { mode: 'image', pages: new Array(PAGE_COUNT), name: 'Amara', costUsd: 0.2016 };
+  assert.equal(readyStatusText(book), 'Ready: a cover and 5 pages for Amara. Cost about $0.20.');
+});
+
+test('readyStatusText reports the real cost, not a rounded constant', () => {
+  const book = { mode: 'image', pages: new Array(PAGE_COUNT), name: 'Amara', costUsd: 0.0336 };
+  assert.equal(readyStatusText(book), 'Ready: a cover and 5 pages for Amara. Cost about $0.03.');
 });

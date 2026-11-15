@@ -15,8 +15,13 @@
  * exists.
  */
 
-import { PAGE_COUNT, generateBook, generateImageBook } from './src/book.js';
-import { IMAGE_MODEL, estimateImageCost } from './src/imagegen.js';
+import {
+  costNoteText,
+  drawingStatusText,
+  generateBook,
+  generateImageBook,
+  readyStatusText,
+} from './src/book.js';
 import { PAGE_HEIGHT, PAGE_WIDTH } from './src/page.js';
 
 // The inline boot check in index.html reads this. A page opened over file://
@@ -127,10 +132,7 @@ function downloadBook(book) {
  */
 function updateCostNote(apiKeyInput, costNote) {
   const hasKey = apiKeyInput.value.trim().length > 0;
-  costNote.textContent = hasKey
-    ? `${PAGE_COUNT + 1} images with ${IMAGE_MODEL}, about `
-      + `$${estimateImageCost(PAGE_COUNT + 1).toFixed(2)} per book.`
-    : 'No key: the book is drawn offline as vector art, at no cost.';
+  costNote.textContent = costNoteText(hasKey);
 }
 
 function init() {
@@ -166,7 +168,7 @@ function init() {
     try {
       let book;
       if (apiKey) {
-        statusEl.textContent = `Drawing ${PAGE_COUNT + 1} pictures. This takes a few seconds.`;
+        statusEl.textContent = drawingStatusText();
         book = await generateImageBook({
           theme: themeInput.value,
           name: nameInput.value,
@@ -177,10 +179,7 @@ function init() {
       }
 
       renderPreviews(previewEl, bookTitle, book);
-      statusEl.textContent = book.mode === 'image'
-        ? `Ready: a cover and ${book.pages.length} pages for ${book.name}. `
-          + `Cost about $${book.costUsd.toFixed(2)}.`
-        : `Ready: a cover and ${book.pages.length} pages for ${book.name}.`;
+      statusEl.textContent = readyStatusText(book);
       downloadBtn.disabled = false;
       downloadBtn.onclick = () => downloadBook(book);
     } catch (error) {

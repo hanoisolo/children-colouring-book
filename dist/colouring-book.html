@@ -2865,7 +2865,7 @@ const { hasGlyph, layoutText, measureText } = __mod_src_lettering;
 const { MAX_PAGE_MOTIFS, MIN_PAGE_MOTIFS, PAGE_HEIGHT, PAGE_WIDTH, composePage, pageToSvg, polylinesToSvg, toPagePolylines } = __mod_src_page;
 const { composeCover, coverToSvg, fitName } = __mod_src_cover;
 const { buildPdf, fitImageRect, jpegSize } = __mod_src_pdf;
-const { buildCoverPrompt, buildPagePrompt, estimateImageCost, generateImages } = __mod_src_imagegen;
+const { IMAGE_MODEL, buildCoverPrompt, buildPagePrompt, estimateImageCost, generateImages } = __mod_src_imagegen;
 
 const MAX_THEME_LENGTH = 60;
 const MAX_NAME_LENGTH = 20;
@@ -3200,7 +3200,49 @@ async function generateImageBook({ theme, name, apiKey, fetchImpl, model, signal
   };
 }
 
-  return { validateInputs, sanitiseFilename, planBookPages, bookDiversity, generateBook, composeImageCover, generateImageBook, MAX_THEME_LENGTH, MAX_NAME_LENGTH, PAGE_COUNT, MIN_DISTINCT_PAGE_MOTIF_SETS, COVER_BAND_INSET };
+/**
+ * What the next click will cost, said before it is clicked.
+ *
+ * Pure so the suite can pin the wording without a DOM. `app.js` only assigns
+ * the result to a text node.
+ *
+ * @param {boolean} hasKey
+ * @returns {string}
+ */
+function costNoteText(hasKey) {
+  return hasKey
+    ? `${PAGE_COUNT + 1} images with ${IMAGE_MODEL}, about `
+      + `${estimateImageCost(PAGE_COUNT + 1).toFixed(2)} per book.`
+    : 'No key: the book is drawn offline as vector art, at no cost.';
+}
+
+/**
+ * The status line shown while the images are being drawn.
+ *
+ * @returns {string}
+ */
+function drawingStatusText() {
+  return `Drawing ${PAGE_COUNT + 1} pictures. This takes a few seconds.`;
+}
+
+/**
+ * The status line shown once a book is ready.
+ *
+ * Vector books keep the original wording exactly, because a baseline test pins
+ * it. Image books append the cost, because the user paid for it and should see
+ * what it came to.
+ *
+ * @param {{ mode: string, pages: Array<object>, name: string, costUsd?: number }} book
+ * @returns {string}
+ */
+function readyStatusText(book) {
+  const base = `Ready: a cover and ${book.pages.length} pages for ${book.name}.`;
+  return book.mode === 'image'
+    ? `${base} Cost about ${book.costUsd.toFixed(2)}.`
+    : base;
+}
+
+  return { validateInputs, sanitiseFilename, planBookPages, bookDiversity, generateBook, composeImageCover, generateImageBook, costNoteText, drawingStatusText, readyStatusText, MAX_THEME_LENGTH, MAX_NAME_LENGTH, PAGE_COUNT, MIN_DISTINCT_PAGE_MOTIF_SETS, COVER_BAND_INSET };
 })();
 
 const __mod_app = (function () {
@@ -3221,8 +3263,7 @@ const __mod_app = (function () {
  * exists.
  */
 
-const { PAGE_COUNT, generateBook, generateImageBook } = __mod_src_book;
-const { IMAGE_MODEL, estimateImageCost } = __mod_src_imagegen;
+const { costNoteText, drawingStatusText, generateBook, generateImageBook, readyStatusText } = __mod_src_book;
 const { PAGE_HEIGHT, PAGE_WIDTH } = __mod_src_page;
 
 // The inline boot check in index.html reads this. A page opened over file://
@@ -3333,10 +3374,7 @@ function downloadBook(book) {
  */
 function updateCostNote(apiKeyInput, costNote) {
   const hasKey = apiKeyInput.value.trim().length > 0;
-  costNote.textContent = hasKey
-    ? `${PAGE_COUNT + 1} images with ${IMAGE_MODEL}, about `
-      + `${estimateImageCost(PAGE_COUNT + 1).toFixed(2)} per book.`
-    : 'No key: the book is drawn offline as vector art, at no cost.';
+  costNote.textContent = costNoteText(hasKey);
 }
 
 function init() {
@@ -3372,7 +3410,7 @@ function init() {
     try {
       let book;
       if (apiKey) {
-        statusEl.textContent = `Drawing ${PAGE_COUNT + 1} pictures. This takes a few seconds.`;
+        statusEl.textContent = drawingStatusText();
         book = await generateImageBook({
           theme: themeInput.value,
           name: nameInput.value,
@@ -3383,10 +3421,7 @@ function init() {
       }
 
       renderPreviews(previewEl, bookTitle, book);
-      statusEl.textContent = book.mode === 'image'
-        ? `Ready: a cover and ${book.pages.length} pages for ${book.name}. `
-          + `Cost about ${book.costUsd.toFixed(2)}.`
-        : `Ready: a cover and ${book.pages.length} pages for ${book.name}.`;
+      statusEl.textContent = readyStatusText(book);
       downloadBtn.disabled = false;
       downloadBtn.onclick = () => downloadBook(book);
     } catch (error) {

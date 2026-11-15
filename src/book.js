@@ -29,6 +29,7 @@ import {
 import { composeCover, coverToSvg, fitName } from './cover.js';
 import { buildPdf, fitImageRect, jpegSize } from './pdf.js';
 import {
+  IMAGE_MODEL,
   buildCoverPrompt,
   buildPagePrompt,
   estimateImageCost,
@@ -366,4 +367,46 @@ export async function generateImageBook({ theme, name, apiKey, fetchImpl, model,
     pdfBytes,
     costUsd: estimateImageCost(images.length),
   };
+}
+
+/**
+ * What the next click will cost, said before it is clicked.
+ *
+ * Pure so the suite can pin the wording without a DOM. `app.js` only assigns
+ * the result to a text node.
+ *
+ * @param {boolean} hasKey
+ * @returns {string}
+ */
+export function costNoteText(hasKey) {
+  return hasKey
+    ? `${PAGE_COUNT + 1} images with ${IMAGE_MODEL}, about `
+      + `$${estimateImageCost(PAGE_COUNT + 1).toFixed(2)} per book.`
+    : 'No key: the book is drawn offline as vector art, at no cost.';
+}
+
+/**
+ * The status line shown while the images are being drawn.
+ *
+ * @returns {string}
+ */
+export function drawingStatusText() {
+  return `Drawing ${PAGE_COUNT + 1} pictures. This takes a few seconds.`;
+}
+
+/**
+ * The status line shown once a book is ready.
+ *
+ * Vector books keep the original wording exactly, because a baseline test pins
+ * it. Image books append the cost, because the user paid for it and should see
+ * what it came to.
+ *
+ * @param {{ mode: string, pages: Array<object>, name: string, costUsd?: number }} book
+ * @returns {string}
+ */
+export function readyStatusText(book) {
+  const base = `Ready: a cover and ${book.pages.length} pages for ${book.name}.`;
+  return book.mode === 'image'
+    ? `${base} Cost about $${book.costUsd.toFixed(2)}.`
+    : base;
 }
