@@ -1,35 +1,30 @@
 {
   "files": {
-    ".gitattributes": {
-      "invalid": 0,
-      "killed": 0,
-      "survived": 0
-    },
     "app.js": {
-      "invalid": 1,
-      "killed": 22,
-      "survived": 8
-    },
-    "index.html": {
       "invalid": 0,
-      "killed": 1,
-      "survived": 94
+      "killed": 5,
+      "survived": 4
     },
-    "src/rng.js": {
-      "invalid": 1,
-      "killed": 28,
-      "survived": 0
-    },
-    "src/themes.js": {
-      "invalid": 2,
-      "killed": 21,
-      "survived": 0
-    },
-    "styles.css": {
+    "src/cover.js": {
       "invalid": 0,
-      "killed": 0,
-      "survived": 33
+      "killed": 26,
+      "survived": 31
+    },
+    "src/lettering.js": {
+      "invalid": 0,
+      "killed": 84,
+      "survived": 34
+    },
+    "src/motifs.js": {
+      "invalid": 0,
+      "killed": 154,
+      "survived": 34
+    },
+    "src/page.js": {
+      "invalid": 0,
+      "killed": 19,
+      "survived": 9
     }
   },
-  "timestamp": "2026-11-15T04:04:44Z"
+  "timestamp": "2026-11-15T04:20:19Z"
 }
