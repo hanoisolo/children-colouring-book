@@ -393,6 +393,25 @@ test('motifsForTheme reaches the documented fallback', () => {
   assert.deepEqual(result.tokens, ['unicorn', 'zeppelin']);
 });
 
+test('motifsForTheme ignores inherited object properties', () => {
+  for (const theme of ['constructor', 'Constructor', 'CONSTRUCTOR']) {
+    const result = motifsForTheme(theme);
+    assert.equal(result.matched, false, `${theme} matched something`);
+    assert.deepEqual(result.motifs, [...FALLBACK_MOTIFS], `${theme} did not fall back`);
+  }
+  const mixed = motifsForTheme('space constructor');
+  assert.equal(mixed.matched, true, 'the real keyword was lost');
+  assert.deepEqual(mixed.motifs, motifsForTheme('space').motifs, 'the inherited property added motifs');
+});
+
+test('motifsForTheme survives markup and control characters in the theme', () => {
+  for (const theme of ['<script>alert(1)</script>', 'a\r\nb', '"><img src=x>', '\u0000star']) {
+    const result = motifsForTheme(theme);
+    assert.ok(Array.isArray(result.motifs), `${JSON.stringify(theme)} did not return motifs`);
+    assert.ok(result.motifs.length > 0, `${JSON.stringify(theme)} returned no motifs`);
+  }
+});
+
 test('isKnownMotif recognises vocabulary members only', () => {
   assert.equal(isKnownMotif('star'), true);
   assert.equal(isKnownMotif('dinosaur'), true);
@@ -481,6 +500,28 @@ test('sanitiseFilename produces a filesystem-safe name', () => {
 test('sanitiseFilename folds accents to their base letter', () => {
   assert.equal(sanitiseFilename('Zoë'), 'zoe.pdf');
   assert.equal(sanitiseFilename('José'), 'jose.pdf');
+});
+
+test('sanitiseFilename never emits a Windows reserved device name', () => {
+  for (const name of ['Con', 'Prn', 'Aux', 'Nul', 'Com1', 'Com9', 'Lpt1', 'Lpt9']) {
+    const filename = sanitiseFilename(name);
+    assert.ok(
+      !/^(con|prn|aux|nul|com[1-9]|lpt[1-9])\.pdf$/.test(filename),
+      `${name} produced the reserved filename ${filename}`,
+    );
+  }
+  assert.equal(sanitiseFilename('Con'), 'con-book.pdf');
+  assert.equal(sanitiseFilename('Connor'), 'connor.pdf', 'a name merely starting with Con was renamed');
+});
+
+test('sanitiseFilename cannot escape the download directory', () => {
+  for (const name of ['../etc/passwd', '..\\..\\windows', '/absolute', 'C:\\Users', '.hidden', 'name.']) {
+    const filename = sanitiseFilename(name);
+    assert.ok(!filename.includes('/'), `${name} kept a forward slash`);
+    assert.ok(!filename.includes('\\'), `${name} kept a backslash`);
+    assert.ok(!filename.startsWith('.'), `${name} kept a leading dot`);
+    assert.ok(/^[a-z0-9-]+\.pdf$/.test(filename), `${name} produced ${filename}`);
+  }
 });
 
 test('sanitiseFilename falls back when the name has no usable characters', () => {

@@ -215,11 +215,10 @@ export function motifsForTheme(theme) {
   const seen = new Set();
   const motifs = [];
   for (const token of tokens) {
-    const mapped = MOTIF_KEYWORDS[token];
-    if (!mapped) {
+    if (!Object.hasOwn(MOTIF_KEYWORDS, token)) {
       continue;
     }
-    for (const motif of mapped) {
+    for (const motif of MOTIF_KEYWORDS[token]) {
       if (seen.has(motif)) {
         continue;
       }

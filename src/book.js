@@ -30,6 +30,13 @@ export const MIN_DISTINCT_PAGE_MOTIF_SETS = 4;
 const NAME_PATTERN = /^\p{L}[\p{L} '\-]*$/u;
 
 /**
+ * Windows refuses to create a file whose stem is a reserved device name, with
+ * any extension. A child called `Con` would otherwise get a download that
+ * silently fails on Windows.
+ */
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/;
+
+/**
  * Validate and normalise the two form inputs.
  *
  * @param {string} theme
@@ -76,7 +83,8 @@ export function sanitiseFilename(name) {
     .replace(/['\u2019]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
-  return `${base || 'colouring-book'}.pdf`;
+  const safe = base || 'colouring-book';
+  return `${WINDOWS_RESERVED.test(safe) ? `${safe}-book` : safe}.pdf`;
 }
 
 /**
