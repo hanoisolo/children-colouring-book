@@ -57,6 +57,26 @@ import {
   buildPdf,
 } from './src/pdf.js';
 
+import {
+  IMAGE_ASPECT_RATIO,
+  IMAGE_CONCURRENCY,
+  IMAGE_ENDPOINT,
+  IMAGE_MAX_ATTEMPTS,
+  IMAGE_MODEL,
+  IMAGE_PRICE_USD,
+  IMAGE_SIZE,
+  LINE_ART_STYLE,
+  base64ToBytes,
+  buildCoverPrompt,
+  buildImageRequest,
+  buildPagePrompt,
+  estimateImageCost,
+  generateImages,
+  imageErrorForStatus,
+  parseImageResponse,
+  requestImage,
+} from './src/imagegen.js';
+
 import './app.js';
 
 import { resolveRequestPath } from './serve.js';
@@ -872,6 +892,33 @@ test('every export in src/cover.js is imported by this suite', () => {
   }
 });
 
+test('every export in src/imagegen.js is imported by this suite', () => {
+  const expected = [
+    'IMAGE_ASPECT_RATIO',
+    'IMAGE_CONCURRENCY',
+    'IMAGE_ENDPOINT',
+    'IMAGE_MAX_ATTEMPTS',
+    'IMAGE_MODEL',
+    'IMAGE_PRICE_USD',
+    'IMAGE_SIZE',
+    'LINE_ART_STYLE',
+    'base64ToBytes',
+    'buildCoverPrompt',
+    'buildImageRequest',
+    'buildPagePrompt',
+    'estimateImageCost',
+    'generateImages',
+    'imageErrorForStatus',
+    'parseImageResponse',
+    'requestImage',
+  ];
+  assert.deepEqual(extractExports(readSource('./src/imagegen.js')), expected);
+  const imported = extractImportedNames(readSource('./test_colouring_book.js'));
+  for (const name of expected) {
+    assert.ok(imported.has(name), `test suite does not import ${name}`);
+  }
+});
+
 test('app.js guards its DOM wiring behind a document check', () => {
   const source = readSource('./app.js');
   assert.ok(source.includes("typeof document !== 'undefined'"), 'app.js has no document guard');
@@ -896,6 +943,7 @@ test('source contains no non-deterministic or dynamic-evaluation escapes', () =>
     './src/cover.js',
     './src/pdf.js',
     './src/book.js',
+    './src/imagegen.js',
   ];
   const banned = [
     { pattern: /Math\.random\s*\(/, label: 'Math.random' },
@@ -1773,4 +1821,333 @@ test('every preview is a standalone SVG document', () => {
     assert.ok(card.svg.endsWith('</svg>'), `${card.label} is truncated`);
     assert.ok(!card.svg.includes('NaN'), `${card.label} contains NaN`);
   }
+});
+
+/* ------------------------------------------------------------------ */
+/* Image generation                                                    */
+/* ------------------------------------------------------------------ */
+
+function fakeFetch(handler) {
+  const calls = [];
+  const fn = async (url, options) => {
+    calls.push({ url, options });
+    return handler(url, options);
+  };
+  fn.calls = calls;
+  return fn;
+}
+
+function jsonResponse(body, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body,
+    text: async () => JSON.stringify(body),
+  };
+}
+
+const IMAGE_JSON = {
+  candidates: [
+    {
+      finishReason: 'STOP',
+      content: { parts: [{ inlineData: { mimeType: 'image/jpeg', data: 'AAECAwQ=' } }] },
+    },
+  ],
+};
+
+test('the image model is the cheapest nano-banana model', () => {
+  assert.equal(IMAGE_MODEL, 'gemini-3.1-flash-lite-image');
+  assert.equal(IMAGE_PRICE_USD, 0.0336);
+  assert.equal(IMAGE_ASPECT_RATIO, '3:4');
+  assert.equal(IMAGE_SIZE, '1K');
+  assert.equal(IMAGE_CONCURRENCY, 2);
+  assert.equal(IMAGE_MAX_ATTEMPTS, 2);
+  assert.match(IMAGE_ENDPOINT, /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models$/);
+});
+
+test('estimateImageCost prices a six-page book', () => {
+  assert.equal(estimateImageCost(6), 6 * 0.0336);
+  assert.equal(estimateImageCost(1), 0.0336);
+  assert.equal(estimateImageCost(0), 0);
+  assert.equal(estimateImageCost(-3), 0);
+  assert.equal(estimateImageCost('nope'), 0);
+});
+
+test('the style clause forbids everything that ruins a colouring page', () => {
+  assert.match(LINE_ART_STYLE, /Thick clean black outlines on pure white/);
+  assert.match(LINE_ART_STYLE, /No shading, no grey, no colour, no text/);
+  assert.match(LINE_ART_STYLE, /Nothing cropped at the edges/);
+});
+
+test('buildPagePrompt names the theme, the motifs and the page', () => {
+  const prompt = buildPagePrompt({
+    theme: 'space dinosaurs',
+    name: 'Amara',
+    pageIndex: 2,
+    motifs: ['rocket', 'star'],
+  });
+  assert.match(prompt, /Theme: space dinosaurs\./);
+  assert.match(prompt, /Draw: rocket, star\./);
+  assert.match(prompt, /page 3 of a book for Amara/);
+  assert.match(prompt, /No shading, no grey, no colour, no text/);
+});
+
+test('buildPagePrompt is deterministic', () => {
+  const input = { theme: 'space dinosaurs', name: 'Amara', pageIndex: 0, motifs: ['star'] };
+  assert.equal(buildPagePrompt(input), buildPagePrompt(input));
+});
+
+test('buildPagePrompt falls back when no motifs are given', () => {
+  assert.match(
+    buildPagePrompt({ theme: 'x', name: 'y', pageIndex: 0, motifs: [] }),
+    /Draw: a cheerful scene\./,
+  );
+  assert.match(
+    buildPagePrompt({ theme: 'x', name: 'y', pageIndex: 0 }),
+    /Draw: a cheerful scene\./,
+  );
+});
+
+test('buildCoverPrompt reserves the top third and forbids the name', () => {
+  const prompt = buildCoverPrompt({ theme: 'under the sea', name: 'Zo\u00eb' });
+  assert.match(prompt, /lower two thirds/);
+  assert.match(prompt, /top third completely empty white space/);
+  assert.match(prompt, /Do not write the name Zo\u00eb or any other text/);
+});
+
+test('buildImageRequest targets the model endpoint with image modalities', () => {
+  const request = buildImageRequest({ prompt: 'a cat' });
+  assert.equal(
+    request.url,
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-image:generateContent',
+  );
+  assert.equal(request.headers['Content-Type'], 'application/json');
+  const body = JSON.parse(request.body);
+  assert.deepEqual(body.generationConfig.responseModalities, ['IMAGE']);
+  assert.equal(body.generationConfig.imageConfig.aspectRatio, '3:4');
+  assert.equal(body.generationConfig.imageConfig.imageSize, '1K');
+  assert.equal(body.contents[0].parts[0].text, 'a cat');
+});
+
+test('buildImageRequest honours a model override', () => {
+  const request = buildImageRequest({ prompt: 'x', model: 'gemini-nano-banana-2.1' });
+  assert.match(request.url, /gemini-nano-banana-2\.1:generateContent$/);
+});
+
+test('base64ToBytes decodes known payloads', () => {
+  assert.deepEqual([...base64ToBytes('AAECAwQ=')], [0, 1, 2, 3, 4]);
+  assert.deepEqual([...base64ToBytes('')], []);
+  assert.deepEqual([...base64ToBytes('/w==')], [255]);
+  assert.deepEqual([...base64ToBytes('AQ==')], [1]);
+  assert.throws(() => base64ToBytes('A'), /invalid base64/);
+});
+
+test('parseImageResponse extracts the inline image', () => {
+  const image = parseImageResponse(IMAGE_JSON);
+  assert.equal(image.mimeType, 'image/jpeg');
+  assert.equal(image.base64, 'AAECAwQ=');
+  assert.deepEqual([...image.bytes], [0, 1, 2, 3, 4]);
+});
+
+test('parseImageResponse skips a thought part and finds the image', () => {
+  const json = {
+    candidates: [
+      {
+        finishReason: 'STOP',
+        content: {
+          parts: [
+            { text: 'thinking', thoughtSignature: 'abc' },
+            { inlineData: { mimeType: 'image/jpeg', data: '/w==' } },
+          ],
+        },
+      },
+    ],
+  };
+  assert.deepEqual([...parseImageResponse(json).bytes], [255]);
+});
+
+test('parseImageResponse defaults a missing mime type to jpeg', () => {
+  const json = {
+    candidates: [{ finishReason: 'STOP', content: { parts: [{ inlineData: { data: 'AQ==' } }] } }],
+  };
+  assert.equal(parseImageResponse(json).mimeType, 'image/jpeg');
+});
+
+test('parseImageResponse rejects a blocked prompt', () => {
+  assert.throws(
+    () => parseImageResponse({ promptFeedback: { blockReason: 'SAFETY' } }),
+    /blocked this prompt \(SAFETY\)/,
+  );
+});
+
+test('parseImageResponse rejects an empty candidate list', () => {
+  assert.throws(() => parseImageResponse({ candidates: [] }), /no candidates/);
+  assert.throws(() => parseImageResponse({}), /no candidates/);
+});
+
+test('parseImageResponse rejects a non-STOP finish reason', () => {
+  assert.throws(
+    () => parseImageResponse({ candidates: [{ finishReason: 'IMAGE_SAFETY' }] }),
+    /stopped early \(IMAGE_SAFETY\)/,
+  );
+});
+
+test('parseImageResponse rejects a candidate with no parts', () => {
+  assert.throws(
+    () => parseImageResponse({ candidates: [{ finishReason: 'STOP' }] }),
+    /no content parts/,
+  );
+});
+
+test('parseImageResponse rejects a text-only reply', () => {
+  assert.throws(
+    () => parseImageResponse({
+      candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'sorry' }] } }],
+    }),
+    /no image/,
+  );
+});
+
+test('imageErrorForStatus names the cause', () => {
+  assert.match(imageErrorForStatus(400, '').message, /rejected the request \(400\)/);
+  assert.match(imageErrorForStatus(401, '').message, /API key was rejected \(401\)/);
+  assert.match(imageErrorForStatus(403, '').message, /API key was rejected \(403\)/);
+  assert.match(imageErrorForStatus(429, '').message, /Rate limit or quota reached \(429\)/);
+  assert.match(imageErrorForStatus(503, '').message, /unavailable \(503\)/);
+  assert.match(imageErrorForStatus(418, '').message, /returned 418/);
+  assert.match(imageErrorForStatus(400, 'bad theme').message, /bad theme/);
+});
+
+test('requestImage sends the key in the x-goog-api-key header', async () => {
+  const fetchImpl = fakeFetch(() => jsonResponse(IMAGE_JSON));
+  const image = await requestImage({ apiKey: '  secret-key  ', prompt: 'a cat', fetchImpl });
+  assert.equal(fetchImpl.calls.length, 1);
+  assert.equal(fetchImpl.calls[0].options.method, 'POST');
+  assert.equal(fetchImpl.calls[0].options.headers['x-goog-api-key'], 'secret-key');
+  assert.equal(fetchImpl.calls[0].options.headers['Content-Type'], 'application/json');
+  assert.deepEqual([...image.bytes], [0, 1, 2, 3, 4]);
+});
+
+test('requestImage refuses an empty key without calling fetch', async () => {
+  const fetchImpl = fakeFetch(() => jsonResponse(IMAGE_JSON));
+  await assert.rejects(
+    () => requestImage({ apiKey: '   ', prompt: 'x', fetchImpl }),
+    /Enter a Gemini API key/,
+  );
+  assert.equal(fetchImpl.calls.length, 0);
+});
+
+test('requestImage maps an HTTP failure to a readable error', async () => {
+  const fetchImpl = fakeFetch(() => jsonResponse({ error: { message: 'API key not valid' } }, 400));
+  await assert.rejects(
+    () => requestImage({ apiKey: 'k', prompt: 'x', fetchImpl }),
+    /rejected the request \(400\)\. API key not valid/,
+  );
+});
+
+test('requestImage explains a network failure', async () => {
+  const fetchImpl = async () => {
+    throw new TypeError('Failed to fetch');
+  };
+  await assert.rejects(
+    () => requestImage({ apiKey: 'k', prompt: 'x', fetchImpl }),
+    /Could not reach the image service/,
+  );
+});
+
+test('requestImage rethrows an abort instead of masking it', async () => {
+  const abort = new Error('aborted');
+  abort.name = 'AbortError';
+  const fetchImpl = async () => {
+    throw abort;
+  };
+  await assert.rejects(
+    () => requestImage({ apiKey: 'k', prompt: 'x', fetchImpl }),
+    /aborted/,
+  );
+});
+
+test('generateImages preserves prompt order', async () => {
+  const fetchImpl = fakeFetch((url, options) => {
+    const text = JSON.parse(options.body).contents[0].parts[0].text;
+    const data = text === 'one' ? 'AQ==' : text === 'two' ? 'Ag==' : 'Aw==';
+    return jsonResponse({
+      candidates: [
+        { finishReason: 'STOP', content: { parts: [{ inlineData: { mimeType: 'image/jpeg', data } }] } },
+      ],
+    });
+  });
+  const images = await generateImages({
+    apiKey: 'k',
+    prompts: ['one', 'two', 'three'],
+    fetchImpl,
+    concurrency: 2,
+  });
+  assert.deepEqual(images.map((image) => image.bytes[0]), [1, 2, 3]);
+});
+
+test('generateImages caps concurrency', async () => {
+  let inFlight = 0;
+  let peak = 0;
+  const fetchImpl = async () => {
+    inFlight += 1;
+    peak = Math.max(peak, inFlight);
+    await new Promise((resolve) => { setTimeout(resolve, 5); });
+    inFlight -= 1;
+    return jsonResponse(IMAGE_JSON);
+  };
+  await generateImages({
+    apiKey: 'k',
+    prompts: ['a', 'b', 'c', 'd', 'e', 'f'],
+    fetchImpl,
+    concurrency: 2,
+  });
+  assert.ok(peak <= 2, `peak concurrency was ${peak}`);
+  assert.ok(peak >= 2, `concurrency never reached the cap, peak was ${peak}`);
+});
+
+test('generateImages retries a 429 once', async () => {
+  let calls = 0;
+  const fetchImpl = async () => {
+    calls += 1;
+    return calls === 1
+      ? jsonResponse({ error: { message: 'quota' } }, 429)
+      : jsonResponse(IMAGE_JSON);
+  };
+  const images = await generateImages({ apiKey: 'k', prompts: ['a'], fetchImpl });
+  assert.equal(calls, 2);
+  assert.equal(images.length, 1);
+});
+
+test('generateImages gives up after the retry budget', async () => {
+  let calls = 0;
+  const fetchImpl = async () => {
+    calls += 1;
+    return jsonResponse({ error: { message: 'quota' } }, 429);
+  };
+  await assert.rejects(
+    () => generateImages({ apiKey: 'k', prompts: ['a'], fetchImpl }),
+    /Rate limit or quota reached \(429\)/,
+  );
+  assert.equal(calls, 2);
+});
+
+test('generateImages does not retry a non-429 failure', async () => {
+  let calls = 0;
+  const fetchImpl = async () => {
+    calls += 1;
+    return jsonResponse({ error: { message: 'bad key' } }, 401);
+  };
+  await assert.rejects(
+    () => generateImages({ apiKey: 'k', prompts: ['a'], fetchImpl }),
+    /API key was rejected \(401\)/,
+  );
+  assert.equal(calls, 1);
+});
+
+test('generateImages rejects an empty prompt list', async () => {
+  await assert.rejects(
+    () => generateImages({ apiKey: 'k', prompts: [] }),
+    /non-empty array/,
+  );
 });

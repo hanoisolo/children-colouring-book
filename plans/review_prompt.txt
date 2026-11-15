@@ -1,0 +1,37 @@
+## Architect Context Packet
+- Mode & Tier: review (Tier 4)
+- Project & Stack: children-colouring-book | Web UI (HTML/CSS/JS), vanilla ES2020 modules, zero dependencies | Node v26.12.1
+- Git Baseline: d8462838acfdb0e873445aac49b536916bb5e619 | Working tree: CLEAN
+- Baseline Test Status: `npm test` -> 151 unit + 1 browser test, 0 failed, 0 skipped
+- Canonical File Inventory:
+  * src/imagegen.js (NEW, planned)
+  * src/pdf.js (206 lines, source)
+  * src/book.js (196 lines, source)
+  * src/cover.js (296 lines, source)
+  * src/lettering.js (288 lines, source)
+  * src/page.js (279 lines, source)
+  * app.js (117 lines, source)
+  * index.html (75 lines, source)
+  * build.js (NEW, planned)
+  * test_colouring_book.js (2000 lines, test)
+  * test_browser.js (140 lines, test)
+  * smoke.html (70 lines, test fixture)
+- Mandatory Anti-Drift Invariants: eight contract IDs (#theme-input, #name-input, #generate-btn, #status, #error, #preview, #download-btn, #book-title); every selector literal in app.js must exist verbatim in index.html; every export in src/ must be imported and exercised by the suite; app.js must export nothing.
+
+## Task
+
+Review the attached upgrade plan (`plans/upgrade_plan.md`) and brief (`plans/upgrade_brief.md`) against the attached source. The user asked for two things: use the cheapest nano-banana image model instead of procedural SVG, and ship the app as a downloadable single file instead of an `npm start` server.
+
+The API contract is already verified by a live probe, not assumed: `gemini-3.1-flash-lite-image`, $0.0336 per 1K image, returns `image/jpeg` 896x1200, and CORS returns `Access-Control-Allow-Origin: null` for a `file://` origin.
+
+The binding constraint is 100% non-regression: all 151 baseline unit tests and the 1 browser smoke test must pass with assertions unmodified. The smoke test asserts the exact status string `Ready: a cover and 5 pages for Amara.` with no API key present, which is why the vector pipeline is retained as the no-key fallback.
+
+## Answer only these five points, under 500 words total
+
+1. **Non-regression:** does keeping the vector pipeline as the no-key fallback genuinely satisfy the 100% gate, or does it hide a regression the gate should catch?
+2. **PDF correctness:** is `/DCTDecode` with the original JPEG bytes, plus a `/XObject` resource and a `cm`/`Do` content stream, sufficient for a valid PDF 1.4 page that also carries vector overlay paths? Name any operator or resource the plan omits.
+3. **Cover name:** is the white-band-plus-vector-name overlay the right call over asking the model to render the name? Any failure mode the plan misses?
+4. **Bundler:** is a topological IIFE-per-module bundle into one classic `<script>` sound for these modules, given they use only static named imports and exports with no default or re-exports? What would break it?
+5. **Anything in the plan that is wrong, missing, or over-built.** Be specific and brief.
+
+Do not restate the plan. Do not write code. End with `REVIEW: PASS` or `REVIEW: FAIL - <itemized issues>`.
