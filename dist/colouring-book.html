@@ -3242,7 +3242,39 @@ function readyStatusText(book) {
     : base;
 }
 
-  return { validateInputs, sanitiseFilename, planBookPages, bookDiversity, generateBook, composeImageCover, generateImageBook, costNoteText, drawingStatusText, readyStatusText, MAX_THEME_LENGTH, MAX_NAME_LENGTH, PAGE_COUNT, MIN_DISTINCT_PAGE_MOTIF_SETS, COVER_BAND_INSET };
+/**
+ * Whether a key field holds a usable key.
+ *
+ * Pure so the suite can pin the boundary cases — empty, whitespace-only, and a
+ * real key — without a DOM.
+ *
+ * @param {string} value
+ * @returns {boolean}
+ */
+function hasApiKey(value) {
+  return value.trim().length > 0;
+}
+
+/**
+ * What the buttons should look like in each phase of a submit.
+ *
+ * The three phases are `busy` while the request is in flight, `ready` once a
+ * book exists, and `error` when generation threw. Keeping this as data rather
+ * than inline assignments means the button state is a tested decision instead
+ * of a literal buried in an event handler.
+ *
+ * @param {'busy' | 'ready' | 'error'} phase
+ * @returns {{ downloadDisabled: boolean, generateDisabled: boolean, ariaBusy: string }}
+ */
+function submitUiState(phase) {
+  return {
+    downloadDisabled: phase !== 'ready',
+    generateDisabled: phase === 'busy',
+    ariaBusy: phase === 'busy' ? 'true' : 'false',
+  };
+}
+
+  return { validateInputs, sanitiseFilename, planBookPages, bookDiversity, generateBook, composeImageCover, generateImageBook, costNoteText, drawingStatusText, readyStatusText, hasApiKey, submitUiState, MAX_THEME_LENGTH, MAX_NAME_LENGTH, PAGE_COUNT, MIN_DISTINCT_PAGE_MOTIF_SETS, COVER_BAND_INSET };
 })();
 
 const __mod_app = (function () {
@@ -3263,7 +3295,7 @@ const __mod_app = (function () {
  * exists.
  */
 
-const { costNoteText, drawingStatusText, generateBook, generateImageBook, readyStatusText } = __mod_src_book;
+const { costNoteText, drawingStatusText, generateBook, generateImageBook, hasApiKey, readyStatusText, submitUiState } = __mod_src_book;
 const { PAGE_HEIGHT, PAGE_WIDTH } = __mod_src_page;
 
 // The inline boot check in index.html reads this. A page opened over file://
@@ -3373,8 +3405,7 @@ function downloadBook(book) {
  * @param {HTMLElement} costNote
  */
 function updateCostNote(apiKeyInput, costNote) {
-  const hasKey = apiKeyInput.value.trim().length > 0;
-  costNote.textContent = costNoteText(hasKey);
+  costNote.textContent = costNoteText(hasApiKey(apiKeyInput.value));
 }
 
 function init() {
@@ -3394,6 +3425,13 @@ function init() {
     return;
   }
 
+  const applyUiState = (phase) => {
+    const ui = submitUiState(phase);
+    downloadBtn.disabled = ui.downloadDisabled;
+    generateBtn.disabled = ui.generateDisabled;
+    generateBtn.setAttribute('aria-busy', ui.ariaBusy);
+  };
+
   updateCostNote(apiKeyInput, costNote);
   apiKeyInput.addEventListener('input', () => updateCostNote(apiKeyInput, costNote));
 
@@ -3403,9 +3441,7 @@ function init() {
     const apiKey = apiKeyInput.value.trim();
     updateCostNote(apiKeyInput, costNote);
     errorEl.textContent = '';
-    downloadBtn.disabled = true;
-    generateBtn.disabled = true;
-    generateBtn.setAttribute('aria-busy', 'true');
+    applyUiState('busy');
 
     try {
       let book;
@@ -3422,15 +3458,12 @@ function init() {
 
       renderPreviews(previewEl, bookTitle, book);
       statusEl.textContent = readyStatusText(book);
-      downloadBtn.disabled = false;
       downloadBtn.onclick = () => downloadBook(book);
+      applyUiState('ready');
     } catch (error) {
       errorEl.textContent = error.message;
       statusEl.textContent = '';
-      downloadBtn.disabled = true;
-    } finally {
-      generateBtn.disabled = false;
-      generateBtn.setAttribute('aria-busy', 'false');
+      applyUiState('error');
     }
   });
 }

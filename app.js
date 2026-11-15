@@ -20,7 +20,9 @@ import {
   drawingStatusText,
   generateBook,
   generateImageBook,
+  hasApiKey,
   readyStatusText,
+  submitUiState,
 } from './src/book.js';
 import { PAGE_HEIGHT, PAGE_WIDTH } from './src/page.js';
 
@@ -131,8 +133,7 @@ function downloadBook(book) {
  * @param {HTMLElement} costNote
  */
 function updateCostNote(apiKeyInput, costNote) {
-  const hasKey = apiKeyInput.value.trim().length > 0;
-  costNote.textContent = costNoteText(hasKey);
+  costNote.textContent = costNoteText(hasApiKey(apiKeyInput.value));
 }
 
 function init() {
@@ -152,6 +153,13 @@ function init() {
     return;
   }
 
+  const applyUiState = (phase) => {
+    const ui = submitUiState(phase);
+    downloadBtn.disabled = ui.downloadDisabled;
+    generateBtn.disabled = ui.generateDisabled;
+    generateBtn.setAttribute('aria-busy', ui.ariaBusy);
+  };
+
   updateCostNote(apiKeyInput, costNote);
   apiKeyInput.addEventListener('input', () => updateCostNote(apiKeyInput, costNote));
 
@@ -161,9 +169,7 @@ function init() {
     const apiKey = apiKeyInput.value.trim();
     updateCostNote(apiKeyInput, costNote);
     errorEl.textContent = '';
-    downloadBtn.disabled = true;
-    generateBtn.disabled = true;
-    generateBtn.setAttribute('aria-busy', 'true');
+    applyUiState('busy');
 
     try {
       let book;
@@ -180,15 +186,12 @@ function init() {
 
       renderPreviews(previewEl, bookTitle, book);
       statusEl.textContent = readyStatusText(book);
-      downloadBtn.disabled = false;
       downloadBtn.onclick = () => downloadBook(book);
+      applyUiState('ready');
     } catch (error) {
       errorEl.textContent = error.message;
       statusEl.textContent = '';
-      downloadBtn.disabled = true;
-    } finally {
-      generateBtn.disabled = false;
-      generateBtn.setAttribute('aria-busy', 'false');
+      applyUiState('error');
     }
   });
 }

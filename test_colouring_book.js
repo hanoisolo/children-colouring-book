@@ -63,7 +63,9 @@ import {
   composeImageCover,
   costNoteText,
   drawingStatusText,
+  hasApiKey,
   readyStatusText,
+  submitUiState,
 } from './src/book.js';
 
 import {
@@ -813,9 +815,11 @@ test('every export in src/book.js is imported by this suite', () => {
     'drawingStatusText',
     'generateBook',
     'generateImageBook',
+    'hasApiKey',
     'planBookPages',
     'readyStatusText',
     'sanitiseFilename',
+    'submitUiState',
     'validateInputs',
   ];
   assert.deepEqual(extractExports(readSource('./src/book.js')), expected);
@@ -2639,8 +2643,12 @@ test('app.js wires the image pipeline behind the key field', () => {
   assert.ok(source.includes('[data-role="cost-note"]'), 'app.js never writes the cost note');
   assert.ok(source.includes('costNoteText'), 'app.js never shows the cost');
   assert.ok(
-    source.includes('generateBtn.disabled = true'),
-    'app.js does not lock the generate button during a request',
+    source.includes("applyUiState('busy')"),
+    'app.js does not lock the buttons during a request',
+  );
+  assert.ok(
+    source.includes("applyUiState('ready')"),
+    'app.js does not unlock the download once a book exists',
   );
   assert.ok(
     source.includes('data:${card.image.mimeType};base64,'),
@@ -2805,4 +2813,42 @@ test('readyStatusText appends the cost for an image book', () => {
 test('readyStatusText reports the real cost, not a rounded constant', () => {
   const book = { mode: 'image', pages: new Array(PAGE_COUNT), name: 'Amara', costUsd: 0.0336 };
   assert.equal(readyStatusText(book), 'Ready: a cover and 5 pages for Amara. Cost about $0.03.');
+});
+
+test('hasApiKey treats empty and whitespace-only as no key', () => {
+  assert.equal(hasApiKey(''), false);
+  assert.equal(hasApiKey('   '), false);
+  assert.equal(hasApiKey('\t\n '), false);
+  assert.equal(hasApiKey('k'), true);
+  assert.equal(hasApiKey('  k  '), true);
+});
+
+test('submitUiState locks both buttons while the request is in flight', () => {
+  assert.deepEqual(submitUiState('busy'), {
+    downloadDisabled: true,
+    generateDisabled: true,
+    ariaBusy: 'true',
+  });
+});
+
+test('submitUiState enables both buttons once a book is ready', () => {
+  assert.deepEqual(submitUiState('ready'), {
+    downloadDisabled: false,
+    generateDisabled: false,
+    ariaBusy: 'false',
+  });
+});
+
+test('submitUiState re-enables generate but not download after an error', () => {
+  assert.deepEqual(submitUiState('error'), {
+    downloadDisabled: true,
+    generateDisabled: false,
+    ariaBusy: 'false',
+  });
+});
+
+test('submitUiState never leaves the generate button locked', () => {
+  for (const phase of ['busy', 'ready', 'error']) {
+    assert.equal(submitUiState(phase).generateDisabled, phase === 'busy', phase);
+  }
 });

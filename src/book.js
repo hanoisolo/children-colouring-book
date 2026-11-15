@@ -410,3 +410,35 @@ export function readyStatusText(book) {
     ? `${base} Cost about $${book.costUsd.toFixed(2)}.`
     : base;
 }
+
+/**
+ * Whether a key field holds a usable key.
+ *
+ * Pure so the suite can pin the boundary cases — empty, whitespace-only, and a
+ * real key — without a DOM.
+ *
+ * @param {string} value
+ * @returns {boolean}
+ */
+export function hasApiKey(value) {
+  return value.trim().length > 0;
+}
+
+/**
+ * What the buttons should look like in each phase of a submit.
+ *
+ * The three phases are `busy` while the request is in flight, `ready` once a
+ * book exists, and `error` when generation threw. Keeping this as data rather
+ * than inline assignments means the button state is a tested decision instead
+ * of a literal buried in an event handler.
+ *
+ * @param {'busy' | 'ready' | 'error'} phase
+ * @returns {{ downloadDisabled: boolean, generateDisabled: boolean, ariaBusy: string }}
+ */
+export function submitUiState(phase) {
+  return {
+    downloadDisabled: phase !== 'ready',
+    generateDisabled: phase === 'busy',
+    ariaBusy: phase === 'busy' ? 'true' : 'false',
+  };
+}
