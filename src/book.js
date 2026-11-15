@@ -53,6 +53,25 @@ const NAME_PATTERN = /^\p{L}[\p{L} '\-]*$/u;
 const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/;
 
 /**
+ * Drop characters that have no business in a theme or a name.
+ *
+ * The theme is interpolated into a prompt sent to the image model, so control
+ * characters and lone surrogates are removed before they get there rather than
+ * relying on JSON.stringify to make them harmless. Lone surrogates are matched
+ * in two passes because a lookbehind would be the only way to do it in one, and
+ * this has to run in every browser the app supports.
+ *
+ * @param {string} value
+ * @returns {string}
+ */
+function stripUnsafe(value) {
+  return value
+    .replace(/[\u0000-\u001F\u007F-\u009F]/g, ' ')
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, '')
+    .replace(/(^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '$1');
+}
+
+/**
  * Validate and normalise the two form inputs.
  *
  * @param {string} theme
@@ -61,7 +80,10 @@ const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/;
  */
 export function validateInputs(theme, name) {
   const errors = [];
-  const cleanTheme = typeof theme === 'string' ? theme.trim().replace(/\s+/g, ' ') : '';
+  const cleanTheme = typeof theme === 'string' ? stripUnsafe(theme).trim().replace(/\s+/g, ' ') : '';
+  // The name is not stripped: NAME_PATTERN rejects control characters outright,
+  // and a baseline test pins that a NUL in the name is an error rather than
+  // something silently cleaned up.
   const cleanName = typeof name === 'string' ? name.trim().replace(/\s+/g, ' ') : '';
 
   if (cleanTheme.length === 0) {

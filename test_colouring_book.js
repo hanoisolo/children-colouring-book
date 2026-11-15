@@ -3022,3 +3022,99 @@ test('the built file keeps the dollar signs in the cost text', () => {
     'the status line lost its dollar sign in the bundle',
   );
 });
+
+test('jpegSize rejects an oversized segment length rather than reading past the end', () => {
+  const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0xff, 0xff, 0x00, 0x00]);
+  assert.throws(() => jpegSize(bytes), /no start-of-frame marker/);
+});
+
+test('parseImageResponse rejects base64 whose length is not a multiple of four', () => {
+  for (const data of ['A', 'AB', 'ABC']) {
+    const json = {
+      candidates: [{
+        finishReason: 'STOP',
+        content: { parts: [{ inlineData: { mimeType: 'image/jpeg', data } }] },
+      }],
+    };
+    assert.throws(() => parseImageResponse(json), /malformed image data/, data);
+  }
+});
+
+test('parseImageResponse rejects an uppercase mime type', () => {
+  const json = {
+    candidates: [{
+      finishReason: 'STOP',
+      content: { parts: [{ inlineData: { mimeType: 'IMAGE/JPEG', data: 'AQ==' } }] },
+    }],
+  };
+  assert.throws(() => parseImageResponse(json), /unsupported type/);
+});
+
+test('a zero-dimension image is refused before it reaches the PDF', async () => {
+  const fetchImpl = fakeFetch(() => imageResponseFor(makeJpeg({ width: 0, height: 0 })));
+  await assert.rejects(
+    () => generateImageBook({ theme: 'space', name: 'Amara', apiKey: 'k', fetchImpl }),
+    /zero|dimension|width|height/i,
+  );
+});
+
+test('a theme with control characters and lone surrogates is cleaned before the prompt', async () => {
+  const fetchImpl = fakeFetch(() => imageResponseFor(makeJpeg()));
+  await generateImageBook({
+    theme: 'space\u0000\u0007\uD800 dinosaurs\u009F',
+    name: 'Amara',
+    apiKey: 'k',
+    fetchImpl,
+  });
+  const prompt = JSON.parse(fetchImpl.calls[0].options.body).contents[0].parts[0].text;
+  assert.ok(!/[\u0000-\u001F\u007F-\u009F]/.test(prompt), 'a control character reached the prompt');
+  assert.ok(!/[\uD800-\uDFFF]/.test(prompt), 'a surrogate reached the prompt');
+  assert.match(prompt, /space dinosaurs/);
+});
+
+test('requestImage reports a 400 with a non-JSON body without leaking the key', async () => {
+  const key = 'fake-key-for-the-400-path-0123456789';
+  const fetchImpl = fakeFetch(() => ({
+    ok: false,
+    status: 400,
+    text: async () => '<html>Bad Request</html>',
+  }));
+  const error = await requestImage({ apiKey: key, prompt: 'a cat', fetchImpl })
+    .then(() => null, (thrown) => thrown);
+  assert.ok(error, 'a 400 did not throw');
+  assert.ok(!error.message.includes(key), 'the 400 error leaked the key');
+  assert.ok(!error.message.includes('<html>'), 'the raw body was echoed to the user');
+});
+
+test('generateImages retries a 429 without leaking the key', async () => {
+  const key = 'fake-key-for-the-retry-path-0123456789';
+  let calls = 0;
+  const fetchImpl = fakeFetch(() => {
+    calls += 1;
+    return calls === 1
+      ? { ok: false, status: 429, text: async () => '{"error":{"message":"slow down"}}' }
+      : imageResponseFor(makeJpeg());
+  });
+  const images = await generateImages({ apiKey: key, prompts: ['a cat'], fetchImpl });
+  assert.equal(images.length, 1);
+  assert.equal(images[0].mimeType, 'image/jpeg');
+  assert.equal(calls, 2, 'the retry did not happen');
+  for (const call of fetchImpl.calls) {
+    assert.ok(!call.url.includes(key), 'the key leaked into the retry URL');
+  }
+});
+
+test('buildImageRequest refuses a model that would retarget the URL', () => {
+  for (const model of ['../v1/models/x', 'a/b', '..', '', 'a b', 'a?x=1']) {
+    assert.throws(
+      () => buildImageRequest({ prompt: 'a cat', model }),
+      /unknown image model/,
+      JSON.stringify(model),
+    );
+  }
+  // A legitimate model id still passes.
+  assert.match(
+    buildImageRequest({ prompt: 'a cat', model: 'gemini-3.1-flash-lite-image' }).url,
+    /gemini-3\.1-flash-lite-image:generateContent$/,
+  );
+});

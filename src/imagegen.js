@@ -44,6 +44,9 @@ export const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg']);
 /** Standard base64, no data-URL prefix, no whitespace. */
 const BASE64_RE = /^[A-Za-z0-9+/]+={0,2}$/;
 
+/** A model id, with no path separators or traversal. */
+const MODEL_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
 /** How many requests may be in flight at once. */
 export const IMAGE_CONCURRENCY = 2;
 
@@ -174,6 +177,12 @@ export function estimateImageCost(count) {
  */
 export function buildImageRequest({ prompt, model, aspectRatio, imageSize }) {
   const resolvedModel = model ?? IMAGE_MODEL;
+  // The model is interpolated into the URL path. It is never user-supplied
+  // today, but a slash or a `..` here would silently retarget the request, so
+  // the shape is checked rather than assumed.
+  if (!MODEL_NAME_RE.test(resolvedModel)) {
+    throw new Error(`unknown image model: ${resolvedModel}`);
+  }
   return {
     url: `${IMAGE_ENDPOINT}/${resolvedModel}:generateContent`,
     headers: { 'Content-Type': 'application/json' },
@@ -230,7 +239,7 @@ export function parseImageResponse(json) {
   if (!ALLOWED_IMAGE_TYPES.has(mimeType)) {
     throw new Error(`the image service returned an unsupported type (${mimeType})`);
   }
-  if (typeof data !== 'string' || !BASE64_RE.test(data)) {
+  if (typeof data !== 'string' || !BASE64_RE.test(data) || data.length % 4 !== 0) {
     throw new Error('the image service returned malformed image data');
   }
   return {
