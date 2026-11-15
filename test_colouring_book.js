@@ -3118,3 +3118,23 @@ test('buildImageRequest refuses a model that would retarget the URL', () => {
     /gemini-3\.1-flash-lite-image:generateContent$/,
   );
 });
+
+test('a run of consecutive lone low surrogates is fully stripped from the theme', async () => {
+  const fetchImpl = fakeFetch(() => imageResponseFor(makeJpeg()));
+  await generateImageBook({
+    theme: 'space\uDC00\uDC00\uDC00 dinosaurs\uD800\uD800',
+    name: 'Amara',
+    apiKey: 'k',
+    fetchImpl,
+  });
+  const prompt = JSON.parse(fetchImpl.calls[0].options.body).contents[0].parts[0].text;
+  assert.ok(!/[\uD800-\uDFFF]/.test(prompt), 'a lone surrogate survived into the prompt');
+  assert.match(prompt, /space dinosaurs/);
+});
+
+test('a valid surrogate pair in the theme is preserved', async () => {
+  const fetchImpl = fakeFetch(() => imageResponseFor(makeJpeg()));
+  await generateImageBook({ theme: 'space \uD83D\uDE80', name: 'Amara', apiKey: 'k', fetchImpl });
+  const prompt = JSON.parse(fetchImpl.calls[0].options.body).contents[0].parts[0].text;
+  assert.ok(prompt.includes('\uD83D\uDE80'), 'a valid emoji was stripped');
+});

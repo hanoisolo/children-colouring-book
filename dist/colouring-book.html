@@ -2924,9 +2924,13 @@ const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/;
  *
  * The theme is interpolated into a prompt sent to the image model, so control
  * characters and lone surrogates are removed before they get there rather than
- * relying on JSON.stringify to make them harmless. Lone surrogates are matched
- * in two passes because a lookbehind would be the only way to do it in one, and
- * this has to run in every browser the app supports.
+ * relying on JSON.stringify to make them harmless.
+ *
+ * Surrogates are handled in one pass that keeps a valid pair and drops a lone
+ * half. The obvious two-regex version — strip high halves with a lookahead,
+ * then low halves with a lookbehind — silently keeps every second consecutive
+ * lone low surrogate, because the lookbehind form consumes the character
+ * before it.
  *
  * @param {string} value
  * @returns {string}
@@ -2934,8 +2938,9 @@ const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/;
 function stripUnsafe(value) {
   return value
     .replace(/[\u0000-\u001F\u007F-\u009F]/g, ' ')
-    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, '')
-    .replace(/(^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '$1');
+    .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDFFF]/g, (match) => (
+      match.length === 2 ? match : ''
+    ));
 }
 
 /**
