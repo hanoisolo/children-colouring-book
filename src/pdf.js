@@ -90,6 +90,13 @@ export function jpegSize(bytes) {
     }
     const marker = bytes[cursor + 1];
 
+    // 0xFF fill bytes are legal padding between segments. Without this the
+    // next two bytes are read as a length and the walk goes off the rails.
+    if (marker === 0xff) {
+      cursor += 1;
+      continue;
+    }
+
     // Standalone markers carry no length field.
     if (marker === 0xd8 || marker === 0xd9 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
       cursor += 2;

@@ -32,6 +32,18 @@ export const IMAGE_ASPECT_RATIO = '3:4';
 /** Smallest and cheapest output size. */
 export const IMAGE_SIZE = '1K';
 
+/**
+ * The only image types this app will render.
+ *
+ * The model returns JPEG. The PDF writer embeds `/DCTDecode` bytes, so a PNG
+ * would produce a corrupt document, and an SVG would be markup reaching an
+ * `img.src` data URL. Both are refused rather than passed through.
+ */
+export const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg']);
+
+/** Standard base64, no data-URL prefix, no whitespace. */
+const BASE64_RE = /^[A-Za-z0-9+/]+={0,2}$/;
+
 /** How many requests may be in flight at once. */
 export const IMAGE_CONCURRENCY = 2;
 
@@ -212,8 +224,17 @@ export function parseImageResponse(json) {
   }
 
   const { mimeType, data } = imagePart.inlineData;
+  // The response is remote data that ends up in an `img.src` data URL and in a
+  // PDF XObject, so it is checked rather than trusted. The model returns JPEG;
+  // anything else is a surprise worth refusing rather than rendering.
+  if (!ALLOWED_IMAGE_TYPES.has(mimeType)) {
+    throw new Error(`the image service returned an unsupported type (${mimeType})`);
+  }
+  if (typeof data !== 'string' || !BASE64_RE.test(data)) {
+    throw new Error('the image service returned malformed image data');
+  }
   return {
-    mimeType: mimeType ?? 'image/jpeg',
+    mimeType,
     base64: data,
     bytes: base64ToBytes(data),
   };

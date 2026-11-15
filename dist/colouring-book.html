@@ -258,7 +258,7 @@ button:not(:disabled):hover {
       single-file build in <code>dist/colouring-book.html</code>, which needs no server.
     </p>
 
-    <form class="book-form" novalidate>
+    <form class="book-form" method="post" novalidate>
       <div class="field">
         <label for="theme-input">Theme</label>
         <input
@@ -290,7 +290,6 @@ button:not(:disabled):hover {
           Gemini API key <span class="optional">(optional)</span>
           <input
             data-role="api-key"
-            name="apiKey"
             type="password"
             autocomplete="off"
             spellcheck="false"
@@ -2171,6 +2170,13 @@ function jpegSize(bytes) {
     }
     const marker = bytes[cursor + 1];
 
+    // 0xFF fill bytes are legal padding between segments. Without this the
+    // next two bytes are read as a length and the walk goes off the rails.
+    if (marker === 0xff) {
+      cursor += 1;
+      continue;
+    }
+
     // Standalone markers carry no length field.
     if (marker === 0xd8 || marker === 0xd9 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
       cursor += 2;
@@ -2512,6 +2518,18 @@ const IMAGE_ASPECT_RATIO = '3:4';
 /** Smallest and cheapest output size. */
 const IMAGE_SIZE = '1K';
 
+/**
+ * The only image types this app will render.
+ *
+ * The model returns JPEG. The PDF writer embeds `/DCTDecode` bytes, so a PNG
+ * would produce a corrupt document, and an SVG would be markup reaching an
+ * `img.src` data URL. Both are refused rather than passed through.
+ */
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg']);
+
+/** Standard base64, no data-URL prefix, no whitespace. */
+const BASE64_RE = /^[A-Za-z0-9+/]+={0,2}$/;
+
 /** How many requests may be in flight at once. */
 const IMAGE_CONCURRENCY = 2;
 
@@ -2692,8 +2710,17 @@ function parseImageResponse(json) {
   }
 
   const { mimeType, data } = imagePart.inlineData;
+  // The response is remote data that ends up in an `img.src` data URL and in a
+  // PDF XObject, so it is checked rather than trusted. The model returns JPEG;
+  // anything else is a surprise worth refusing rather than rendering.
+  if (!ALLOWED_IMAGE_TYPES.has(mimeType)) {
+    throw new Error(`the image service returned an unsupported type (${mimeType})`);
+  }
+  if (typeof data !== 'string' || !BASE64_RE.test(data)) {
+    throw new Error('the image service returned malformed image data');
+  }
   return {
-    mimeType: mimeType ?? 'image/jpeg',
+    mimeType,
     base64: data,
     bytes: base64ToBytes(data),
   };
@@ -2840,7 +2867,7 @@ async function generateImages({
   return results;
 }
 
-  return { base64ToBytes, buildPagePrompt, buildCoverPrompt, estimateImageCost, buildImageRequest, parseImageResponse, imageErrorForStatus, requestImage, generateImages, IMAGE_MODEL, IMAGE_PRICE_USD, IMAGE_ENDPOINT, IMAGE_ASPECT_RATIO, IMAGE_SIZE, IMAGE_CONCURRENCY, IMAGE_MAX_ATTEMPTS, LINE_ART_STYLE };
+  return { base64ToBytes, buildPagePrompt, buildCoverPrompt, estimateImageCost, buildImageRequest, parseImageResponse, imageErrorForStatus, requestImage, generateImages, IMAGE_MODEL, IMAGE_PRICE_USD, IMAGE_ENDPOINT, IMAGE_ASPECT_RATIO, IMAGE_SIZE, ALLOWED_IMAGE_TYPES, IMAGE_CONCURRENCY, IMAGE_MAX_ATTEMPTS, LINE_ART_STYLE };
 })();
 
 const __mod_src_book = (function () {
@@ -3212,7 +3239,7 @@ async function generateImageBook({ theme, name, apiKey, fetchImpl, model, signal
 function costNoteText(hasKey) {
   return hasKey
     ? `${PAGE_COUNT + 1} images with ${IMAGE_MODEL}, about `
-      + `${estimateImageCost(PAGE_COUNT + 1).toFixed(2)} per book.`
+      + `$${estimateImageCost(PAGE_COUNT + 1).toFixed(2)} per book.`
     : 'No key: the book is drawn offline as vector art, at no cost.';
 }
 
@@ -3238,7 +3265,7 @@ function drawingStatusText() {
 function readyStatusText(book) {
   const base = `Ready: a cover and ${book.pages.length} pages for ${book.name}.`;
   return book.mode === 'image'
-    ? `${base} Cost about ${book.costUsd.toFixed(2)}.`
+    ? `${base} Cost about $${book.costUsd.toFixed(2)}.`
     : base;
 }
 

@@ -20,7 +20,7 @@
       single-file build in <code>dist/colouring-book.html</code>, which needs no server.
     </p>
 
-    <form class="book-form" novalidate>
+    <form class="book-form" method="post" novalidate>
       <div class="field">
         <label for="theme-input">Theme</label>
         <input
@@ -52,7 +52,6 @@
           Gemini API key <span class="optional">(optional)</span>
           <input
             data-role="api-key"
-            name="apiKey"
             type="password"
             autocomplete="off"
             spellcheck="false"

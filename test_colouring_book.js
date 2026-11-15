@@ -80,6 +80,7 @@ import {
 } from './src/pdf.js';
 
 import {
+  ALLOWED_IMAGE_TYPES,
   IMAGE_ASPECT_RATIO,
   IMAGE_CONCURRENCY,
   IMAGE_ENDPOINT,
@@ -926,6 +927,7 @@ test('every export in src/cover.js is imported by this suite', () => {
 
 test('every export in src/imagegen.js is imported by this suite', () => {
   const expected = [
+    'ALLOWED_IMAGE_TYPES',
     'IMAGE_ASPECT_RATIO',
     'IMAGE_CONCURRENCY',
     'IMAGE_ENDPOINT',
@@ -1998,11 +2000,35 @@ test('parseImageResponse skips a thought part and finds the image', () => {
   assert.deepEqual([...parseImageResponse(json).bytes], [255]);
 });
 
-test('parseImageResponse defaults a missing mime type to jpeg', () => {
+test('parseImageResponse refuses a missing mime type instead of assuming jpeg', () => {
   const json = {
     candidates: [{ finishReason: 'STOP', content: { parts: [{ inlineData: { data: 'AQ==' } }] } }],
   };
-  assert.equal(parseImageResponse(json).mimeType, 'image/jpeg');
+  assert.throws(() => parseImageResponse(json), /unsupported type/);
+});
+
+test('parseImageResponse refuses an image type the PDF writer cannot embed', () => {
+  for (const mimeType of ['image/png', 'image/svg+xml', 'text/html', 'image/jpeg; charset=x']) {
+    const json = {
+      candidates: [{
+        finishReason: 'STOP',
+        content: { parts: [{ inlineData: { mimeType, data: 'AQ==' } }] },
+      }],
+    };
+    assert.throws(() => parseImageResponse(json), /unsupported type/, mimeType);
+  }
+});
+
+test('parseImageResponse refuses malformed base64', () => {
+  for (const data of ['not base64!', 'AQ===', 'data:image/jpeg;base64,AQ==', 'AQ== ', '']) {
+    const json = {
+      candidates: [{
+        finishReason: 'STOP',
+        content: { parts: [{ inlineData: { mimeType: 'image/jpeg', data } }] },
+      }],
+    };
+    assert.throws(() => parseImageResponse(json), /no image|malformed image data/, data);
+  }
 });
 
 test('parseImageResponse rejects a blocked prompt', () => {
@@ -2851,4 +2877,148 @@ test('submitUiState never leaves the generate button locked', () => {
   for (const phase of ['busy', 'ready', 'error']) {
     assert.equal(submitUiState(phase).generateDisabled, phase === 'busy', phase);
   }
+});
+
+// --- Security regression tests (from the post-upgrade audit) ---------------
+
+test('jpegSize rejects a segment length below 2 instead of looping', () => {
+  const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x00, 0x00, 0x00]);
+  assert.throws(() => jpegSize(bytes), /segment length below 2/);
+});
+
+test('jpegSize rejects a truncated frame header', () => {
+  const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x00]);
+  assert.throws(() => jpegSize(bytes), /truncated frame header/);
+});
+
+test('jpegSize rejects a non-JPEG and a too-short buffer', () => {
+  assert.throws(() => jpegSize(new Uint8Array([0x89, 0x50, 0x4e, 0x47])), /missing the SOI marker/);
+  assert.throws(() => jpegSize(new Uint8Array([0xff, 0xd8])), /expects a Uint8Array/);
+  assert.throws(() => jpegSize('not bytes'), /expects a Uint8Array/);
+});
+
+test('jpegSize reports a zero-dimension frame rather than inventing a size', () => {
+  const frame = jpegSize(makeJpeg({ width: 0, height: 0 }));
+  assert.equal(frame.width, 0);
+  assert.equal(frame.height, 0);
+});
+
+test('jpegSize survives 0xFF fill bytes before the frame header', () => {
+  const base = makeJpeg({ width: 40, height: 30 });
+  const filled = new Uint8Array([0xff, 0xd8, 0xff, 0xff, 0xff, ...base.slice(2)]);
+  const frame = jpegSize(filled);
+  assert.equal(frame.width, 40);
+  assert.equal(frame.height, 30);
+});
+
+test('the API key never appears in an error message on a failed request', async () => {
+  const key = 'fake-key-for-the-error-path-0123456789';
+  for (const status of [401, 403, 429, 500]) {
+    const fetchImpl = fakeFetch(() => ({
+      ok: false,
+      status,
+      text: async () => '{"error":{"message":"denied"}}',
+    }));
+    const error = await requestImage({ apiKey: key, prompt: 'a cat', fetchImpl })
+      .then(() => null, (thrown) => thrown);
+    assert.ok(error, `status ${status} did not throw`);
+    assert.ok(!error.message.includes(key), `status ${status} leaked the key`);
+  }
+});
+
+test('the API key never appears in an error message when the network fails', async () => {
+  const key = 'fake-key-for-the-network-path-0123456789';
+  const fetchImpl = async () => { throw new Error('network down'); };
+  const error = await requestImage({ apiKey: key, prompt: 'a cat', fetchImpl })
+    .then(() => null, (thrown) => thrown);
+  assert.ok(error, 'a network failure did not throw');
+  assert.ok(!error.message.includes(key), 'the network error leaked the key');
+});
+
+test('index.html never submits the key in a URL', () => {
+  const html = readSource('./index.html');
+  const keyInput = /<input[^>]*data-role="api-key"[^>]*>/.exec(html);
+  assert.ok(keyInput, 'the key field is missing');
+  assert.ok(
+    !/\bname=/.test(keyInput[0]),
+    'the key field has a name, so a native GET submit would put the key in the URL',
+  );
+  assert.match(html, /<form[^>]*method="post"/, 'the form defaults to GET');
+});
+
+test('generateImageBook rejects an over-length theme before calling the API', async () => {
+  const fetchImpl = fakeFetch(() => imageResponseFor(makeJpeg()));
+  await assert.rejects(
+    () => generateImageBook({
+      theme: 'x'.repeat(MAX_THEME_LENGTH + 1),
+      name: 'Amara',
+      apiKey: 'k',
+      fetchImpl,
+    }),
+    /theme/i,
+  );
+  assert.equal(fetchImpl.calls.length, 0, 'the API was called with an invalid theme');
+});
+
+test('generateImageBook rejects an over-length name before calling the API', async () => {
+  const fetchImpl = fakeFetch(() => imageResponseFor(makeJpeg()));
+  await assert.rejects(
+    () => generateImageBook({
+      theme: 'space',
+      name: 'x'.repeat(MAX_NAME_LENGTH + 1),
+      apiKey: 'k',
+      fetchImpl,
+    }),
+    /name/i,
+  );
+  assert.equal(fetchImpl.calls.length, 0, 'the API was called with an invalid name');
+});
+
+test('polylinesToSvg escapes a hostile aria-label', () => {
+  const svg = polylinesToSvg([], { label: '"><script>alert(1)</script>' });
+  assert.ok(!svg.includes('<script'), 'the label broke out of the attribute');
+  assert.ok(svg.includes('&lt;script&gt;'), 'the label was not escaped');
+  assert.ok(svg.includes('&quot;'), 'the quote was not escaped');
+});
+
+test('bundleHtml keeps $$ intact so the cost templates survive bundling', () => {
+  const out = bundleHtml({
+    html: '<link rel="stylesheet" href="styles.css"><script type="module" src="app.js"></script>',
+    css: 'body { color: black; }',
+    script: 'const cost = `$${price} per book`;',
+  });
+  assert.ok(out.includes('`$${price} per book`'), 'the $$ collapsed to $ during bundling');
+});
+
+test('bundleHtml escapes every HTML5 script-closing form', () => {
+  for (const closing of ['</script>', '</script >', '</script\n>', '</SCRIPT>']) {
+    const out = bundleHtml({
+      html: '<link rel="stylesheet" href="styles.css"><script type="module" src="app.js"></script>',
+      css: '',
+      script: `const s = "${closing}";`,
+    });
+    const body = /<script>\n([\s\S]*?)\n<\/script>/.exec(out);
+    assert.ok(body, `no inline script for ${JSON.stringify(closing)}`);
+    assert.ok(
+      !/<\/script[\s>]/i.test(body[1]),
+      `the bundle can be closed early by ${JSON.stringify(closing)}`,
+    );
+  }
+});
+
+test('the built file keeps the dollar signs in the cost text', () => {
+  // The regression this guards: bundleHtml used string replacements, so the
+  // `$$` in the cost templates collapsed to `$` and the shipped file read
+  // "about 0.20 per book". The dist browser test only runs vector mode, so
+  // nothing caught it. Assert on the artifact itself.
+  build();
+  const out = readSource('./dist/colouring-book.html');
+  assert.ok(
+    out.includes('`$${estimateImageCost(PAGE_COUNT + 1).toFixed(2)} per book.`'),
+    'the cost note lost its dollar sign in the bundle',
+  );
+  assert.ok(
+    out.includes('`${base} Cost about $${book.costUsd.toFixed(2)}.`'),
+    'the status line lost its dollar sign in the bundle',
+  );
 });

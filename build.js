@@ -155,14 +155,20 @@ export function stripBootScript(html) {
  */
 export function bundleHtml({ html, css, script }) {
   const withoutBoot = stripBootScript(html);
+  // Callbacks, not replacement strings. A string replacement expands `$$`,
+  // `$&`, `$'` and `` $` `` inside the replacement, so the `$$` in the cost
+  // templates of src/book.js silently collapsed to `$` and the shipped file
+  // read "about 0.20 per book". A callback is inserted verbatim.
   const withStyle = withoutBoot.replace(
     /<link rel="stylesheet" href="styles\.css">/,
-    `<style>\n${css.trim()}\n</style>`,
+    () => `<style>\n${css.trim()}\n</style>`,
   );
-  const safeScript = script.replace(/<\/script>/gi, '<\\/script>');
+  // HTML5 ends a script at `</script` followed by whitespace, `/` or `>`, so
+  // escaping only the exact `</script>` leaves `</script >` able to break out.
+  const safeScript = script.replace(/<\/(script)/gi, '<\\/$1');
   return withStyle.replace(
     /<script type="module" src="app\.js"><\/script>/,
-    `<script>\n${safeScript}\n</script>`,
+    () => `<script>\n${safeScript}\n</script>`,
   );
 }
 
