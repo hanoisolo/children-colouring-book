@@ -31,11 +31,22 @@ module, and `app.js` imports the rest of `src/` directly.
 ## Running the tests
 
 ```
-node test_colouring_book.js
+npm test
 ```
 
-151 tests, 454 assertions, no dependencies. The suite runs offline in Node and
-covers the whole pipeline headlessly — the same functions the browser calls.
+Two layers:
+
+- `node test_colouring_book.js` — 151 tests, 454 assertions, no dependencies.
+  Runs offline in Node and covers the whole pipeline headlessly, calling the
+  same functions the browser calls.
+- `node test_browser.js` — loads the real `index.html` in headless Chromium,
+  fills the form, clicks Generate book, and asserts the six previews, the
+  enabled download and the title. This is the layer that catches a page which
+  does not work at all, which the unit suite cannot see.
+
+The browser layer needs Edge or Chrome installed. It does not skip silently if
+neither is found — it fails and tells you, because a browser test that quietly
+does nothing is how a dead Generate button once shipped.
 
 ## How it works
 
@@ -93,8 +104,10 @@ index.html              the app
 styles.css              layout and print stylesheet
 app.js                  DOM controller
 serve.js                zero-dependency static server for local development
+smoke.html              browser smoke-test fixture
 src/                    the pipeline, in dependency order
-test_colouring_book.js  the whole suite
+test_colouring_book.js  the unit suite
+test_browser.js         the headless browser smoke test
 plans/                  roadmap, milestone reviews, Stage 6 evidence
 AGENTS.md               build rules and architectural constraints
 ```

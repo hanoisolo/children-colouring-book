@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>PENDING</title></head>
+<body>
+  <!--
+    Browser smoke-test fixture. Not part of the app.
+
+    Loads the real index.html in a same-origin iframe, waits for app.js to
+    boot, fills the form, clicks Generate book, and writes the resulting DOM
+    state into this page's title as URI-encoded JSON. test_browser.js reads it
+    back out of --dump-dom.
+
+    Driving the real page rather than a copy of its markup is the point: if
+    index.html drifts, this test fails.
+  -->
+  <iframe id="app" src="./index.html" width="1200" height="900"></iframe>
+  <script>
+    (function () {
+      var frame = document.getElementById('app');
+      var deadline = 8000;
+
+      function report(data) {
+        document.title = encodeURIComponent(JSON.stringify(data));
+      }
+
+      function drive(win, doc) {
+        try {
+          doc.getElementById('theme-input').value = 'space dinosaurs';
+          doc.getElementById('name-input').value = 'Amara';
+          doc.getElementById('generate-btn').click();
+        } catch (error) {
+          report({ failure: 'could not drive the form: ' + error.message });
+          return;
+        }
+
+        setTimeout(function () {
+          var notice = doc.querySelector('.boot-error');
+          report({
+            status: doc.getElementById('status').textContent,
+            error: doc.getElementById('error').textContent,
+            previews: doc.querySelectorAll('#preview [data-role="page-preview"]').length,
+            svgs: doc.querySelectorAll('#preview svg').length,
+            downloadDisabled: doc.getElementById('download-btn').disabled,
+            bookTitle: doc.getElementById('book-title').textContent,
+            bootNoticeHidden: notice ? notice.hidden : null,
+          });
+        }, 600);
+      }
+
+      var waited = 0;
+      function tick() {
+        var win = frame.contentWindow;
+        var doc = frame.contentDocument;
+        if (win && doc && win.__bookBooted) {
+          drive(win, doc);
+          return;
+        }
+        waited += 50;
+        if (waited > deadline) {
+          report({ failure: 'app.js never booted in the iframe' });
+          return;
+        }
+        setTimeout(tick, 50);
+      }
+
+      tick();
+    })();
+  </script>
+</body>
+</html>

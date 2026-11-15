@@ -34,6 +34,8 @@ libraries, no build step.
 | `styles.css` | Layout and print-friendly presentation |
 | `app.js` | DOM controller: validate, generate, preview, download |
 | `serve.js` | Zero-dependency static server for local development (`npm start`) |
+| `smoke.html` | Browser smoke-test fixture: drives the real page in an iframe |
+| `test_browser.js` | Headless Chromium smoke test (`npm run test:browser`) |
 | `src/rng.js` | `hashString` (32-bit) and `makeRng` (seeded PRNG) |
 | `src/themes.js` | Theme normalisation, stopwords, 20+ motif vocabulary, fallback |
 | `src/motifs.js` | Procedural motif polyline generators in `0..1` boxes |
@@ -46,14 +48,44 @@ libraries, no build step.
 
 ## Verification gate
 
-The single canonical gate for this project:
+The canonical gate for this project:
 
 ```
-node test_colouring_book.js
+npm test
+```
+
+That runs two layers:
+
+```
+node test_colouring_book.js   # 151 unit tests, no browser, ~150ms
+node test_browser.js          # 1 browser smoke test, needs Edge or Chrome, ~1.5s
 ```
 
 Per-segment syntax gates use `node --check <file>`. All gates are plain CLI and
 must run in Git Bash. No PowerShell cmdlets, no GUI tools, no "looks right" gates.
+
+**The mutation gate uses the unit suite only** (`node test_colouring_book.js`).
+Running a browser per mutant would take minutes per file and buy nothing: the
+mutants are in `src/`, which the unit suite already exercises directly.
+
+## Browser smoke test
+
+`test_browser.js` serves the project, loads `smoke.html` in headless Chromium,
+and lets that page drive the real `index.html` in a same-origin iframe: fill the
+form, click Generate book, then report the resulting DOM back through the page
+title. It asserts six previews, six SVGs, an enabled download, the exact status
+line, the book title, and that the boot notice stayed hidden.
+
+It exists because 147 unit tests once passed while clicking Generate book did
+nothing. Nothing in the unit suite loads a document, so nothing could see it.
+
+Two rules for this test:
+
+1. **It drives the real `index.html`, never a copy of its markup.** If the page
+   drifts, the test must fail. Do not replace the iframe with inline markup.
+2. **It never skips silently.** If no Chromium browser is found it fails and
+   says so. A browser test that quietly does nothing is how the dead button
+   shipped in the first place.
 
 ## Mandatory anti-drift invariant (Section 8)
 
@@ -83,7 +115,11 @@ This invariant is never weakened, skipped, or broadened to make a suite pass.
   No `Math.random()`, no `Date.now()`, no locale-dependent sorting in `src/`.
 - Pure black strokes on white, stroke width >= 4 pt at A4 scale (595.28 x 841.89 pt).
 - No `eval`, no `new Function`, no dynamic `import()` of computed paths.
-- No test may open a browser, spawn a dialog, bind a port, or make an HTTP request.
+- No test may spawn a dialog or make an outbound HTTP request. The unit suite
+  (`test_colouring_book.js`) must not open a browser or bind a port. The one
+  deliberate exception is `test_browser.js`, which binds an ephemeral loopback
+  port and drives headless Chromium against the real page — see the browser
+  smoke test section below.
 - `src/pdf.js` must return a `Uint8Array` and use no Node-only APIs, so the same
   code runs in the browser.
 - **The app must be served over HTTP.** A browser refuses to fetch an ES module
@@ -97,8 +133,8 @@ This invariant is never weakened, skipped, or broadened to make a suite pass.
 
 - **Phase 3 complete. All three roadmap phases are done; the project is ship-ready.**
 - Roadmap: `plans/MASTER_ROADMAP.md` (3 phases x 3 segments).
-- Gate: `node test_colouring_book.js` -> 151 tests, 454 assertions, 0 failures,
-  0 skipped.
+- Gate: `npm test` -> 151 unit tests + 1 browser smoke test, 454 assertions,
+  0 failures, 0 skipped.
 - Landed: `package.json`, `src/rng.js`, `src/themes.js`, `src/motifs.js`,
   `src/lettering.js`, `src/page.js`, `src/cover.js`, `src/pdf.js`, `src/book.js`,
   `index.html`, `styles.css`, `app.js`, `test_colouring_book.js`,
