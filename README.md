@@ -16,10 +16,14 @@ No backend, no third-party libraries.
 **Download the app and open it.** It is one file. No install, no server, no
 build step, no terminal:
 
-<https://github.com/hanoisolo/children-colouring-book/raw/master/dist/colouring-book.html>
+<https://github.com/hanoisolo/children-colouring-book/releases/latest/download/colouring-book.html>
 
 Save it anywhere and double-click it. It runs from disk, offline, in vector
 mode. That is the app — everything below is for people working on it.
+
+That link always serves the newest release. The file is also committed at
+`dist/colouring-book.html` if you would rather read the source of what you are
+running.
 
 ## Development
 
@@ -52,6 +56,20 @@ It is not a general-purpose bundler; it handles this project's import graph and
 nothing else. **The rebuild is a discipline, not a check** — no test can tell
 that `dist/colouring-book.html` is stale, so a change to `src/` without a
 rebuild ships a stale app.
+
+**Cutting a release.** The download link above resolves to the newest release's
+`colouring-book.html` asset, so a release is what publishes a new version:
+
+```
+npm run build
+git add dist/colouring-book.html
+git commit -m "Rebuild the bundle"
+git push
+```
+
+Then create a release tagged `vX.Y.Z` with `dist/colouring-book.html` attached
+as an asset. The asset must be the rebuilt file, not a copy from an earlier
+release — the whole point of the link is that it serves what is on `master`.
 
 ## Two ways to draw the art
 
