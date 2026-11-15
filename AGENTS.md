@@ -73,7 +73,7 @@ npm test
 That runs two layers:
 
 ```
-node test_colouring_book.js   # 237 unit tests, no browser, ~320ms
+node test_colouring_book.js   # 263 unit tests, no browser, ~320ms
 node test_browser.js          # 3 browser tests, needs Edge or Chrome, ~3.3s
 ```
 
@@ -83,6 +83,22 @@ must run in Git Bash. No PowerShell cmdlets, no GUI tools, no "looks right" gate
 **The mutation gate uses the unit suite only** (`node test_colouring_book.js`).
 Running a browser per mutant would take minutes per file and buy nothing: the
 mutants are in `src/`, which the unit suite already exercises directly.
+
+**The mutation gate skips files with no unit-test coverage by design.** The
+canonical invocation is:
+
+```
+python ../ask_gemini.py --mutation-baseline <sha> \
+  --mutation-gate "node test_colouring_book.js" \
+  --mutation-skip "*.html" --mutation-skip "*.css" --mutation-skip "plans/*" \
+  --mutation-out plans/mutation_report.md
+```
+
+`index.html`, `styles.css`, `smoke.html` and `plans/live_check.mjs` cannot be
+constrained by a unit test, so every mutant in them survives. Without the skip
+globs they produced 69 of 88 survivors and buried the 19 that described real
+source. `dist/colouring-book.html` needs no glob: build output is skipped by
+directory. Skipped files are named in the report, so the exclusion is visible.
 
 **No test may call the live image API.** `src/imagegen.js` resolves `fetch` from
 `globalThis` at call time so the suite can stub it. A test that reaches the
@@ -224,7 +240,7 @@ then fixed.
 
 - **Upgrade complete: image mode and the downloadable single file are shipped.**
 - Baseline before the upgrade: `d846283`, 151 unit tests + 1 browser test.
-- Gate: `npm test` -> 237 unit tests + 3 browser tests, 0 failures, 0 skipped.
+- Gate: `npm test` -> 263 unit tests + 3 browser tests, 0 failures, 0 skipped.
 - Landed in the upgrade: `src/imagegen.js`, `build.js`,
   `dist/colouring-book.html`; modified `src/pdf.js`, `src/book.js`,
   `src/page.js`, `index.html`, `app.js`, `styles.css`, `package.json`,
