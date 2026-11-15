@@ -57,7 +57,7 @@ Phase 3 of `plans/MASTER_ROADMAP.md` is complete. It is the last roadmap phase, 
 2. The mutation gate mutates added lines only, so it cannot see weakness introduced by deleted logic. Phase 3 deleted `buildPreviewPages` and `app.js`'s exports; the assertion-integrity scan covers that half, but neither gate proves the deleted behaviour is fully re-covered by the new path.
 3. `pdfTextString` escapes only `\` and the two parentheses. A control character below `0x20` would fall through to the hex branch and be encoded as UTF-16BE rather than escaped, which is legal but not what a reader expects for, say, a tab in a title. No caller can currently produce one, because `validateInputs` restricts the name and the title is derived from it.
 4. The PDF writer emits no `/Font` resource and no text operators. The child's name appears on the cover as vector strokes from `src/lettering.js`, not as selectable text, so the PDF is not searchable and a screen reader cannot read the name.
-5. `styles.css` has no `@media print` rule for the preview grid. The PDF is the print artefact, so this is cosmetic, but printing the page itself would print the previews too.
+5. The PDF has never been opened by a third-party reader. The suite proves the structure by construction — every xref offset lands on its object header, every `/Length` matches its stream, `startxref` lands on the table — but no independent parser has accepted the file. No PDF library is installed and Section 10 forbids installing one unpinned, so the first real reader to see this document will be the user's.
 
 ## Questions — answer only these four points, under 400 words total
 
