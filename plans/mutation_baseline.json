@@ -1,35 +1,3 @@
 {
-  "files": {
-    "app.js": {
-      "invalid": 0,
-      "killed": 0,
-      "survived": 1
-    },
-    "build.js": {
-      "invalid": 3,
-      "killed": 12,
-      "survived": 5
-    },
-    "src/book.js": {
-      "invalid": 1,
-      "killed": 21,
-      "survived": 10
-    },
-    "src/imagegen.js": {
-      "invalid": 0,
-      "killed": 28,
-      "survived": 5
-    },
-    "src/page.js": {
-      "invalid": 0,
-      "killed": 4,
-      "survived": 0
-    },
-    "src/pdf.js": {
-      "invalid": 2,
-      "killed": 24,
-      "survived": 7
-    }
-  },
-  "timestamp": "2026-11-15T06:42:05Z"
+  "files": {}
 }
