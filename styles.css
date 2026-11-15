@@ -1,0 +1,180 @@
+:root {
+  --ink: #111111;
+  --muted: #5c5c5c;
+  --line: #d8d8d8;
+  --paper: #ffffff;
+  --wash: #f6f4ef;
+  --accent: #1f4e79;
+  --radius: 10px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 2rem 1.25rem 4rem;
+  background: var(--wash);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+}
+
+.site-header {
+  max-width: 60rem;
+  margin: 0 auto 2rem;
+  text-align: center;
+}
+
+.site-header h1 {
+  margin: 0 0 0.35rem;
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  letter-spacing: -0.01em;
+}
+
+.tagline {
+  margin: 0;
+  color: var(--muted);
+}
+
+.layout {
+  max-width: 60rem;
+  margin: 0 auto;
+}
+
+.book-form {
+  display: grid;
+  gap: 1.25rem;
+  padding: 1.5rem;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.field label {
+  font-weight: 600;
+}
+
+.field input {
+  padding: 0.65rem 0.75rem;
+  font: inherit;
+  color: inherit;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.field input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+button {
+  padding: 0.7rem 1.1rem;
+  font: inherit;
+  font-weight: 600;
+  color: var(--paper);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+button:disabled {
+  color: var(--muted);
+  background: var(--wash);
+  border-color: var(--line);
+  cursor: not-allowed;
+}
+
+button:not(:disabled):hover {
+  filter: brightness(1.08);
+}
+
+.status,
+.error {
+  margin: 1rem 0 0;
+  min-height: 1.5rem;
+}
+
+.status {
+  color: var(--muted);
+}
+
+.error {
+  color: #a3231b;
+  font-weight: 600;
+}
+
+.book {
+  margin-top: 2rem;
+}
+
+.book h2 {
+  margin: 0 0 1rem;
+  font-size: 1.35rem;
+}
+
+.preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.page-preview {
+  margin: 0;
+  padding: 1rem;
+  aspect-ratio: 1 / 1.414;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.page-preview figcaption {
+  font-weight: 600;
+}
+
+.motif-list {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+@media print {
+  body {
+    padding: 0;
+    background: var(--paper);
+  }
+
+  .book-form,
+  .status,
+  .error,
+  #download-btn {
+    display: none;
+  }
+
+  .preview-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .page-preview {
+    break-inside: avoid;
+    border-color: #000000;
+  }
+}

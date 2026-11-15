@@ -88,8 +88,10 @@ This invariant is never weakened, skipped, or broadened to make a suite pass.
 
 ## Status
 
-- **Phase 1 — Segment 1 pending.**
+- **Phase 1 complete. Phase 2 — Segment 1 pending.**
 - Roadmap: `plans/MASTER_ROADMAP.md` (3 phases x 3 segments).
-- Baseline: greenfield, zero tests, zero source files.
-- Phase-boundary milestone review required after Phase 1 Segment 3 and Phase 2
-  Segment 3 (Section 7).
+- Gate: `node test_colouring_book.js` -> 49 tests, 0 failures, 0 skipped.
+- Landed so far: `package.json`, `src/rng.js`, `src/themes.js`, `index.html`,
+  `styles.css`, `app.js`, `test_colouring_book.js`.
+- Phase-boundary milestone review required after Phase 2 Segment 3 (Section 7).
+  Phase 1 review completed at commit `Phase 1`.

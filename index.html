@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>My Colouring Book</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <h1>My Colouring Book</h1>
+    <p class="tagline">A personalised colouring book, drawn from a theme and a name.</p>
+  </header>
+
+  <main class="layout">
+    <form class="book-form" novalidate>
+      <div class="field">
+        <label for="theme-input">Theme</label>
+        <input
+          id="theme-input"
+          name="theme"
+          type="text"
+          maxlength="60"
+          placeholder="space dinosaurs"
+          autocomplete="off"
+          required>
+        <p class="hint">Try &ldquo;space dinosaurs&rdquo;, &ldquo;under the sea&rdquo;, or &ldquo;fairy garden&rdquo;.</p>
+      </div>
+
+      <div class="field">
+        <label for="name-input">Child&rsquo;s name</label>
+        <input
+          id="name-input"
+          name="name"
+          type="text"
+          maxlength="20"
+          placeholder="Amara"
+          autocomplete="off"
+          required>
+        <p class="hint">Letters, spaces, hyphens and apostrophes. Up to 20 characters.</p>
+      </div>
+
+      <button id="generate-btn" type="submit">Generate book</button>
+    </form>
+
+    <p id="status" class="status" aria-live="polite"></p>
+    <p id="error" class="error" role="alert"></p>
+
+    <section class="book" aria-labelledby="book-title">
+      <h2 id="book-title">Your book</h2>
+      <div id="preview" class="preview-grid">
+        <figure class="page-preview" data-role="page-preview" data-page-index="0">
+          <figcaption>Cover</figcaption>
+          <p class="motif-list">Your pages will appear here.</p>
+        </figure>
+      </div>
+      <button id="download-btn" type="button" disabled>Download PDF</button>
+    </section>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
