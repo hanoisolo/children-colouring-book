@@ -92,10 +92,22 @@ This invariant is never weakened, skipped, or broadened to make a suite pass.
 - Roadmap: `plans/MASTER_ROADMAP.md` (3 phases x 3 segments).
 - Gate: `node test_colouring_book.js` -> 57 tests, 0 failures, 0 skipped.
 - Landed so far: `package.json`, `src/rng.js`, `src/themes.js`, `index.html`,
-  `styles.css`, `app.js`, `test_colouring_book.js`, `.gitattributes`,
-  `plans/mutation_gate.sh`.
+  `styles.css`, `app.js`, `test_colouring_book.js`, `.gitattributes`.
 - Phase 1 milestone review: `AUDIT: PASS` (`plans/milestone_review.md`).
 - Phase-boundary milestone review required after Phase 2 Segment 3 (Section 7).
+
+## Stage 6 mutation gate
+
+Run it with the gate command directly — no wrapper:
+
+```
+python ../ask_gemini.py --mutation-baseline <sha> --mutation-gate "node test_colouring_book.js" --out plans/mutation_report.md
+```
+
+`mutation_gate.run_gate` now kills the whole process tree on timeout, so a
+mutant that turns a loop bound into an infinite loop is reported as a kill
+instead of hanging the pass. The `plans/mutation_gate.sh` wrapper that worked
+around the old hang has been removed.
 
 ## Phase 2 architectural constraints (from the Phase 1 milestone review)
 
