@@ -90,8 +90,37 @@ This invariant is never weakened, skipped, or broadened to make a suite pass.
 
 - **Phase 1 complete. Phase 2 — Segment 1 pending.**
 - Roadmap: `plans/MASTER_ROADMAP.md` (3 phases x 3 segments).
-- Gate: `node test_colouring_book.js` -> 49 tests, 0 failures, 0 skipped.
+- Gate: `node test_colouring_book.js` -> 57 tests, 0 failures, 0 skipped.
 - Landed so far: `package.json`, `src/rng.js`, `src/themes.js`, `index.html`,
-  `styles.css`, `app.js`, `test_colouring_book.js`.
+  `styles.css`, `app.js`, `test_colouring_book.js`, `.gitattributes`,
+  `plans/mutation_gate.sh`.
+- Phase 1 milestone review: `AUDIT: PASS` (`plans/milestone_review.md`).
 - Phase-boundary milestone review required after Phase 2 Segment 3 (Section 7).
-  Phase 1 review completed at commit `Phase 1`.
+
+## Phase 2 architectural constraints (from the Phase 1 milestone review)
+
+These are binding for Phase 2 and Phase 3. They come from the architect's
+review of the Phase 1 boundary and are not optional refinements.
+
+1. **One canonical polyline IR.** `src/page.js` and `src/cover.js` emit a single
+   polyline intermediate representation in top-down A4 user units. SVG
+   serialisation and the PDF emitter both consume that same IR. Flip the Y axis
+   only inside `src/pdf.js`, never in the composition modules, so the two
+   outputs cannot drift.
+2. **Track `closed` and `fill` per polyline.** SVG hides overlaps with
+   `fill="white"`; a stroke-only PDF exposes "X-ray" intersections where shapes
+   cross. Each polyline carries whether it is closed and whether it is filled,
+   and `src/pdf.js` emits `B` for filled-and-stroked versus `S` for stroke-only.
+   Use round caps and joins (`1 J`, `1 j`) to avoid acute miter spikes.
+3. **Lettering must handle diacritics and long names.** `validateInputs` accepts
+   `Zoë` and `José`, so `src/lettering.js` must render accented glyphs (NFD base
+   letter plus accent strokes) rather than throwing. Names up to 20 characters
+   must scale or wrap to stay inside the cover frame at a cap height of at least
+   60 pt.
+4. **No fake-DOM shim.** Keep `app.js` DOM wiring thin and put all SVG and card
+   assembly in pure functions the suite can call headlessly. Static selector
+   parity plus Phase 3 end-to-end coverage is the agreed level of DOM assurance.
+5. **Move `validateInputs` and `sanitiseFilename` at Phase 3 Segment 2**, not
+   earlier. When moving them to `src/book.js`, update the test imports and the
+   `app.js` export-parity expectation in the same commit so no duplicate
+   implementation survives.
