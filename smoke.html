@@ -12,21 +12,84 @@
 
     Driving the real page rather than a copy of its markup is the point: if
     index.html drifts, this test fails.
+
+    Two scenarios, chosen by ?mode=:
+
+      (default)  the offline vector book, no key
+      image      the generated-image book, with fetch stubbed inside the iframe
+
+    The image scenario stubs fetch rather than calling the API, so the test
+    makes no outbound request and costs nothing. It still exercises the real
+    wiring: the key field, the async handler, the image cards, the cover
+    overlay and the download.
   -->
   <iframe id="app" src="./index.html" width="1200" height="900"></iframe>
   <script>
     (function () {
       var frame = document.getElementById('app');
       var deadline = 8000;
+      var mode = /[?&]mode=image\b/.test(window.location.search) ? 'image' : 'vector';
 
       function report(data) {
         document.title = encodeURIComponent(JSON.stringify(data));
       }
 
+      /**
+       * A structurally valid JPEG: SOI, SOF0, start-of-scan, EOI. The app only
+       * reads the frame header, so this is enough to drive the real path.
+       */
+      function makeJpegBase64(width, height) {
+        var bytes = [0xff, 0xd8];
+        var sofLength = 8 + 3 * 3;
+        bytes.push(
+          0xff, 0xc0,
+          (sofLength >> 8) & 0xff, sofLength & 0xff,
+          8,
+          (height >> 8) & 0xff, height & 0xff,
+          (width >> 8) & 0xff, width & 0xff,
+          3
+        );
+        for (var i = 0; i < 3; i += 1) {
+          bytes.push(1, 0x11, 0);
+        }
+        bytes.push(0xff, 0xda, 0x00, 0x02);
+        bytes.push(0xff, 0xd9);
+        return btoa(String.fromCharCode.apply(null, bytes));
+      }
+
+      function installFakeFetch(win) {
+        var calls = 0;
+        var jpeg = makeJpegBase64(896, 1200);
+        win.fetch = function () {
+          calls += 1;
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: function () {
+              return Promise.resolve({
+                candidates: [{
+                  finishReason: 'STOP',
+                  content: {
+                    parts: [{ inlineData: { mimeType: 'image/jpeg', data: jpeg } }]
+                  }
+                }]
+              });
+            },
+            text: function () { return Promise.resolve(''); }
+          });
+        };
+        return function () { return calls; };
+      }
+
       function drive(win, doc) {
+        var fetchCalls = function () { return 0; };
         try {
           doc.getElementById('theme-input').value = 'space dinosaurs';
           doc.getElementById('name-input').value = 'Amara';
+          if (mode === 'image') {
+            fetchCalls = installFakeFetch(win);
+            doc.querySelector('[data-role="api-key"]').value = 'test-key';
+          }
           doc.getElementById('generate-btn').click();
         } catch (error) {
           report({ failure: 'could not drive the form: ' + error.message });
@@ -35,16 +98,21 @@
 
         setTimeout(function () {
           var notice = doc.querySelector('.boot-error');
+          var costNote = doc.querySelector('[data-role="cost-note"]');
           report({
+            mode: mode,
             status: doc.getElementById('status').textContent,
             error: doc.getElementById('error').textContent,
             previews: doc.querySelectorAll('#preview [data-role="page-preview"]').length,
             svgs: doc.querySelectorAll('#preview svg').length,
+            imgs: doc.querySelectorAll('#preview img').length,
             downloadDisabled: doc.getElementById('download-btn').disabled,
             bookTitle: doc.getElementById('book-title').textContent,
             bootNoticeHidden: notice ? notice.hidden : null,
+            costNote: costNote ? costNote.textContent : null,
+            fetchCalls: fetchCalls()
           });
-        }, 600);
+        }, 900);
       }
 
       var waited = 0;

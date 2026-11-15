@@ -157,6 +157,7 @@ function init() {
     event.preventDefault();
 
     const apiKey = apiKeyInput.value.trim();
+    updateCostNote(apiKeyInput, costNote);
     errorEl.textContent = '';
     downloadBtn.disabled = true;
     generateBtn.disabled = true;
