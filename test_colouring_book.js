@@ -42,8 +42,58 @@ import {
   PAGE_COUNT,
   validateInputs,
   sanitiseFilename,
-  buildPlaceholderPages,
+  planBookPages,
+  buildPreviewPages,
 } from './app.js';
+
+import {
+  MAIN_WEIGHT,
+  DETAIL_WEIGHT,
+  stroke,
+  polygon,
+  circle,
+  ellipse,
+  arc,
+  computeBounds,
+  MOTIF_NAMES,
+  drawMotif,
+} from './src/motifs.js';
+
+import {
+  DEFAULT_LETTER_SPACING,
+  hasGlyph,
+  measureText,
+  layoutText,
+  fitText,
+} from './src/lettering.js';
+
+import {
+  PAGE_WIDTH,
+  PAGE_HEIGHT,
+  FRAME_INSET,
+  INNER_FRAME_INSET,
+  GROUND_Y,
+  MIN_PAGE_MOTIFS,
+  MAX_PAGE_MOTIFS,
+  STROKE_BASE,
+  STROKE_FLOOR,
+  strokeWidthFor,
+  toPagePolylines,
+  polylineToPathData,
+  polylinesToSvg,
+  pageToSvg,
+  composePage,
+} from './src/page.js';
+
+import {
+  COVER_TITLE,
+  MIN_NAME_SIZE,
+  MAX_NAME_SIZE,
+  MAX_NAME_LINES,
+  fitName,
+  composeCover,
+  coverToSvg,
+} from './src/cover.js';
 
 const readSource = (relative) => readFileSync(new URL(relative, import.meta.url), 'utf8');
 
@@ -427,33 +477,58 @@ test('sanitiseFilename falls back when the name has no usable characters', () =>
 });
 
 /* ------------------------------------------------------------------ */
-/* Placeholder pages                                                   */
+/* Book planning                                                       */
 /* ------------------------------------------------------------------ */
 
-test('buildPlaceholderPages is deterministic for the same input', () => {
-  const first = buildPlaceholderPages('space dinosaurs', 'Amara');
-  const second = buildPlaceholderPages('space dinosaurs', 'Amara');
+test('planBookPages is deterministic for the same input', () => {
+  const first = planBookPages('space dinosaurs', 'Amara');
+  const second = planBookPages('space dinosaurs', 'Amara');
   assert.deepEqual(first, second);
   assert.equal(first.pages.length, PAGE_COUNT);
 });
 
-test('buildPlaceholderPages varies with the name', () => {
-  const amara = buildPlaceholderPages('space dinosaurs', 'Amara');
-  const liam = buildPlaceholderPages('space dinosaurs', 'Liam');
+test('planBookPages varies with the name', () => {
+  const amara = planBookPages('space dinosaurs', 'Amara');
+  const liam = planBookPages('space dinosaurs', 'Liam');
   assert.notEqual(amara.seed, liam.seed);
 });
 
-test('buildPlaceholderPages gives each page a bounded motif subset', () => {
-  const book = buildPlaceholderPages('space dinosaurs', 'Amara');
+test('planBookPages gives each page between three and seven distinct motifs', () => {
+  const book = planBookPages('space dinosaurs', 'Amara');
   for (const page of book.pages) {
-    assert.ok(page.motifs.length >= 1 && page.motifs.length <= 3, `page ${page.index} has ${page.motifs.length} motifs`);
+    assert.ok(
+      page.motifs.length >= MIN_PAGE_MOTIFS && page.motifs.length <= MAX_PAGE_MOTIFS,
+      `page ${page.index} has ${page.motifs.length} motifs`,
+    );
     assert.equal(new Set(page.motifs).size, page.motifs.length, `page ${page.index} repeats a motif`);
     for (const motif of page.motifs) {
-      assert.ok(book.motifs.includes(motif), `page ${page.index} invented motif ${motif}`);
+      assert.ok(MOTIF_NAMES.includes(motif), `page ${page.index} invented motif ${motif}`);
     }
   }
   const signatures = new Set(book.pages.map((page) => page.motifs.join('+')));
-  assert.ok(signatures.size >= 2, 'every placeholder page is identical');
+  assert.ok(signatures.size >= 2, 'every page is identical');
+});
+
+test('planBookPages puts at least one theme motif on every page', () => {
+  for (const theme of ['space dinosaurs', 'under the sea', 'fairy garden']) {
+    const book = planBookPages(theme, 'Amara');
+    assert.equal(book.matched, true, `${theme} did not match`);
+    for (const page of book.pages) {
+      const themed = page.motifs.filter((motif) => book.motifs.includes(motif));
+      assert.ok(themed.length >= 1, `${theme} page ${page.index} has no theme motif`);
+    }
+  }
+});
+
+test('planBookPages still fills every page when the theme matches nothing', () => {
+  const book = planBookPages('unicorns and zeppelins', 'Amara');
+  assert.equal(book.matched, false);
+  for (const page of book.pages) {
+    assert.ok(
+      page.motifs.length >= MIN_PAGE_MOTIFS && page.motifs.length <= MAX_PAGE_MOTIFS,
+      `fallback page ${page.index} has ${page.motifs.length} motifs`,
+    );
+  }
 });
 
 /* ------------------------------------------------------------------ */
@@ -592,7 +667,8 @@ test('every export in app.js is imported by this suite', () => {
     'MAX_NAME_LENGTH',
     'MAX_THEME_LENGTH',
     'PAGE_COUNT',
-    'buildPlaceholderPages',
+    'buildPreviewPages',
+    'planBookPages',
     'sanitiseFilename',
     'validateInputs',
   ];
@@ -603,10 +679,88 @@ test('every export in app.js is imported by this suite', () => {
   }
 });
 
+test('every export in src/motifs.js is imported by this suite', () => {
+  const expected = [
+    'DETAIL_WEIGHT',
+    'MAIN_WEIGHT',
+    'MOTIF_NAMES',
+    'arc',
+    'circle',
+    'computeBounds',
+    'drawMotif',
+    'ellipse',
+    'polygon',
+    'stroke',
+  ];
+  assert.deepEqual(extractExports(readSource('./src/motifs.js')), expected);
+  const imported = extractImportedNames(readSource('./test_colouring_book.js'));
+  for (const name of expected) {
+    assert.ok(imported.has(name), `test suite does not import ${name}`);
+  }
+});
+
+test('every export in src/lettering.js is imported by this suite', () => {
+  const expected = [
+    'DEFAULT_LETTER_SPACING',
+    'fitText',
+    'hasGlyph',
+    'layoutText',
+    'measureText',
+  ];
+  assert.deepEqual(extractExports(readSource('./src/lettering.js')), expected);
+  const imported = extractImportedNames(readSource('./test_colouring_book.js'));
+  for (const name of expected) {
+    assert.ok(imported.has(name), `test suite does not import ${name}`);
+  }
+});
+
+test('every export in src/page.js is imported by this suite', () => {
+  const expected = [
+    'FRAME_INSET',
+    'GROUND_Y',
+    'INNER_FRAME_INSET',
+    'MAX_PAGE_MOTIFS',
+    'MIN_PAGE_MOTIFS',
+    'PAGE_HEIGHT',
+    'PAGE_WIDTH',
+    'STROKE_BASE',
+    'STROKE_FLOOR',
+    'composePage',
+    'pageToSvg',
+    'polylineToPathData',
+    'polylinesToSvg',
+    'strokeWidthFor',
+    'toPagePolylines',
+  ];
+  assert.deepEqual(extractExports(readSource('./src/page.js')), expected);
+  const imported = extractImportedNames(readSource('./test_colouring_book.js'));
+  for (const name of expected) {
+    assert.ok(imported.has(name), `test suite does not import ${name}`);
+  }
+});
+
+test('every export in src/cover.js is imported by this suite', () => {
+  const expected = [
+    'COVER_TITLE',
+    'MAX_NAME_LINES',
+    'MAX_NAME_SIZE',
+    'MIN_NAME_SIZE',
+    'composeCover',
+    'coverToSvg',
+    'fitName',
+  ];
+  assert.deepEqual(extractExports(readSource('./src/cover.js')), expected);
+  const imported = extractImportedNames(readSource('./test_colouring_book.js'));
+  for (const name of expected) {
+    assert.ok(imported.has(name), `test suite does not import ${name}`);
+  }
+});
+
 test('app.js is importable without a DOM', () => {
   assert.equal(typeof validateInputs, 'function');
   assert.equal(typeof sanitiseFilename, 'function');
-  assert.equal(typeof buildPlaceholderPages, 'function');
+  assert.equal(typeof planBookPages, 'function');
+  assert.equal(typeof buildPreviewPages, 'function');
 });
 
 /* ------------------------------------------------------------------ */
@@ -614,7 +768,15 @@ test('app.js is importable without a DOM', () => {
 /* ------------------------------------------------------------------ */
 
 test('source contains no non-deterministic or dynamic-evaluation escapes', () => {
-  const files = ['./app.js', './src/rng.js', './src/themes.js'];
+  const files = [
+    './app.js',
+    './src/rng.js',
+    './src/themes.js',
+    './src/motifs.js',
+    './src/lettering.js',
+    './src/page.js',
+    './src/cover.js',
+  ];
   const banned = [
     { pattern: /Math\.random\s*\(/, label: 'Math.random' },
     { pattern: /Date\.now\s*\(/, label: 'Date.now' },
@@ -629,5 +791,442 @@ test('source contains no non-deterministic or dynamic-evaluation escapes', () =>
     for (const { pattern, label } of banned) {
       assert.ok(!pattern.test(source), `${file} uses ${label}`);
     }
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/* Motif library                                                       */
+/* ------------------------------------------------------------------ */
+
+test('MOTIF_NAMES matches the theme vocabulary exactly', () => {
+  assert.ok(MOTIF_NAMES.length >= 20, `only ${MOTIF_NAMES.length} motifs are drawable`);
+  assert.deepEqual([...MOTIF_NAMES].sort(), [...MOTIF_VOCABULARY].sort());
+  assert.equal(new Set(MOTIF_NAMES).size, MOTIF_NAMES.length);
+});
+
+test('every motif draws polylines inside its unit box', () => {
+  for (const name of MOTIF_NAMES) {
+    const { polylines } = drawMotif(name, makeRng(7));
+    assert.ok(polylines.length > 0, `${name} drew nothing`);
+    for (const line of polylines) {
+      assert.ok(Array.isArray(line.points) && line.points.length >= 2, `${name} has a degenerate polyline`);
+      assert.equal(typeof line.closed, 'boolean', `${name} has a non-boolean closed flag`);
+      assert.equal(typeof line.fill, 'boolean', `${name} has a non-boolean fill flag`);
+      assert.ok(line.weight > 0, `${name} has a non-positive weight`);
+      for (const [x, y] of line.points) {
+        assert.ok(Number.isFinite(x) && Number.isFinite(y), `${name} has a non-finite point`);
+        assert.ok(x >= -1e-9 && x <= 1 + 1e-9, `${name} escapes the box on x: ${x}`);
+        assert.ok(y >= -1e-9 && y <= 1 + 1e-9, `${name} escapes the box on y: ${y}`);
+      }
+    }
+  }
+});
+
+test('every motif reports a positive bounding box inside the unit box', () => {
+  for (const name of MOTIF_NAMES) {
+    const { bounds } = drawMotif(name, makeRng(11));
+    assert.ok(bounds.w > 0, `${name} has zero width`);
+    assert.ok(bounds.h > 0, `${name} has zero height`);
+    assert.ok(bounds.x >= -1e-9 && bounds.x + bounds.w <= 1 + 1e-9, `${name} bounds escape on x`);
+    assert.ok(bounds.y >= -1e-9 && bounds.y + bounds.h <= 1 + 1e-9, `${name} bounds escape on y`);
+  }
+});
+
+test('drawMotif is deterministic for a given seed', () => {
+  for (const name of MOTIF_NAMES) {
+    assert.deepEqual(drawMotif(name, makeRng(5)), drawMotif(name, makeRng(5)), `${name} is not deterministic`);
+  }
+});
+
+test('drawMotif rejects an unknown motif', () => {
+  assert.throws(() => drawMotif('unicorn', makeRng(1)), { message: 'unknown motif: unicorn' });
+});
+
+test('the polyline builders set closed, fill and weight', () => {
+  assert.deepEqual(stroke([[0, 0], [1, 1]]), {
+    points: [[0, 0], [1, 1]],
+    closed: false,
+    fill: false,
+    weight: MAIN_WEIGHT,
+  });
+  const closed = polygon([[0, 0], [1, 0], [1, 1]], { fill: true, weight: DETAIL_WEIGHT });
+  assert.equal(closed.closed, true);
+  assert.equal(closed.fill, true);
+  assert.equal(closed.weight, DETAIL_WEIGHT);
+  assert.equal(circle(0.5, 0.5, 0.4).closed, true);
+  assert.equal(ellipse(0.5, 0.5, 0.4, 0.2).closed, true);
+  assert.equal(arc(0.5, 0.5, 0.4, 0, 90).closed, false);
+});
+
+test('computeBounds handles an empty set and a single line', () => {
+  assert.deepEqual(computeBounds([]), { x: 0, y: 0, w: 0, h: 0 });
+  assert.deepEqual(computeBounds([stroke([[1, 2], [4, 6]])]), { x: 1, y: 2, w: 3, h: 4 });
+});
+
+/* ------------------------------------------------------------------ */
+/* Lettering                                                           */
+/* ------------------------------------------------------------------ */
+
+const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const DIGITS = '0123456789';
+const PUNCTUATION = " -'";
+
+test('every uppercase letter, digit and allowed punctuation has a glyph', () => {
+  for (const char of [...ALPHABET, ...DIGITS, ...PUNCTUATION]) {
+    assert.equal(hasGlyph(char), true, `no glyph for ${JSON.stringify(char)}`);
+  }
+});
+
+test('hasGlyph rejects characters outside the alphabet', () => {
+  for (const char of ['@', '#', '&', '!', 'a', 'z', '\u0301', '\u0414']) {
+    assert.equal(hasGlyph(char), false, `${JSON.stringify(char)} should have no glyph`);
+  }
+});
+
+test('layoutText emits one polyline per glyph stroke', () => {
+  const lines = layoutText('AMARA', { size: 60 });
+  assert.ok(lines.length > 0);
+  for (const line of lines) {
+    assert.equal(line.closed, false);
+    assert.equal(line.fill, false);
+    assert.equal(line.weight, MAIN_WEIGHT);
+    assert.ok(line.points.length >= 2);
+  }
+  assert.equal(layoutText('A', { size: 60 }).length, 2);
+  assert.equal(layoutText('M', { size: 60 }).length, 1);
+  assert.equal(layoutText('R', { size: 60 }).length, 3);
+  assert.equal(layoutText(' ', { size: 60 }).length, 0);
+});
+
+test('layoutText scales with size and offsets by x and y', () => {
+  const at60 = layoutText('I', { size: 60 });
+  const at120 = layoutText('I', { size: 120 });
+  assert.equal(at60.length, at120.length);
+  for (let i = 0; i < at60.length; i += 1) {
+    for (let j = 0; j < at60[i].points.length; j += 1) {
+      assert.ok(Math.abs(at120[i].points[j][0] - at60[i].points[j][0] * 2) < 1e-9);
+      assert.ok(Math.abs(at120[i].points[j][1] - at60[i].points[j][1] * 2) < 1e-9);
+    }
+  }
+  const offset = layoutText('I', { size: 60, x: 100, y: 200 });
+  assert.ok(Math.abs(offset[0].points[0][0] - (at60[0].points[0][0] + 100)) < 1e-9);
+  assert.ok(Math.abs(offset[0].points[0][1] - (at60[0].points[0][1] + 200)) < 1e-9);
+});
+
+test('measureText is linear in size and counts letter spacing', () => {
+  const em = measureText('AMARA', { size: 1 });
+  assert.ok(Math.abs(measureText('AMARA', { size: 60 }) - em * 60) < 1e-9);
+  assert.ok(Math.abs(em - (5 + 4 * DEFAULT_LETTER_SPACING)) < 1e-9);
+  assert.ok(Math.abs(measureText('AMARA', { size: 1, letterSpacing: 0 }) - 5) < 1e-9);
+  assert.equal(measureText('', { size: 60 }), 0);
+});
+
+test('layoutText throws a descriptive error for an unsupported character', () => {
+  assert.throws(() => layoutText('AM@RA'), { message: 'unsupported character: "@"' });
+  assert.throws(() => layoutText('\u0414'), /unsupported character/);
+});
+
+test('accented letters resolve to a base glyph plus accent strokes', () => {
+  const cases = [
+    ['\u00c9', 'E', 1],
+    ['\u00c8', 'E', 1],
+    ['\u00ca', 'E', 1],
+    ['\u00cb', 'E', 2],
+    ['\u00d1', 'N', 1],
+    ['\u00c5', 'A', 1],
+    ['\u010c', 'C', 1],
+    ['\u00c7', 'C', 1],
+  ];
+  for (const [accented, base, extra] of cases) {
+    assert.equal(
+      layoutText(accented, { size: 60 }).length,
+      layoutText(base, { size: 60 }).length + extra,
+      `${accented} did not add ${extra} accent stroke(s) to ${base}`,
+    );
+  }
+  const acute = layoutText('\u00c9', { size: 60 });
+  const accent = acute[acute.length - 1];
+  assert.ok(accent.points.every(([, y]) => y < 0), 'the acute accent did not rise above the cap line');
+});
+
+test('precomposed and decomposed accents lay out identically', () => {
+  assert.deepEqual(layoutText('E\u0301', { size: 60 }), layoutText('\u00c9', { size: 60 }));
+});
+
+test('fitText clamps to the floor and the ceiling', () => {
+  assert.equal(fitText('AMARA', { maxWidth: 400, maxSize: 120, minSize: 60 }), 76);
+  assert.equal(fitText('ABCDEFGHIJKLMNOPQRST', { maxWidth: 400, maxSize: 120, minSize: 60 }), 60);
+  assert.equal(fitText('I', { maxWidth: 10000, maxSize: 120, minSize: 60 }), 120);
+});
+
+/* ------------------------------------------------------------------ */
+/* Page composition                                                    */
+/* ------------------------------------------------------------------ */
+
+test('the page geometry is A4 in points', () => {
+  assert.ok(Math.abs(PAGE_WIDTH - 595.28) < 1e-9);
+  assert.ok(Math.abs(PAGE_HEIGHT - 841.89) < 1e-9);
+  assert.ok(FRAME_INSET < INNER_FRAME_INSET);
+  assert.ok(GROUND_Y > PAGE_HEIGHT * 0.6 && GROUND_Y < PAGE_HEIGHT * 0.8);
+  assert.equal(MIN_PAGE_MOTIFS, 3);
+  assert.equal(MAX_PAGE_MOTIFS, 7);
+});
+
+test('strokeWidthFor never drops below the crayon floor', () => {
+  assert.equal(strokeWidthFor(MAIN_WEIGHT), STROKE_BASE);
+  assert.equal(strokeWidthFor(DETAIL_WEIGHT), STROKE_FLOOR);
+  assert.equal(strokeWidthFor(0), STROKE_FLOOR);
+  assert.ok(STROKE_FLOOR >= 4);
+  assert.ok(STROKE_BASE > STROKE_FLOOR);
+});
+
+test('composePage is deterministic and index-sensitive', () => {
+  assert.deepEqual(composePage('space dinosaurs', 'Amara', 0), composePage('space dinosaurs', 'Amara', 0));
+  const seeds = new Set(
+    Array.from({ length: PAGE_COUNT }, (_, i) => composePage('space dinosaurs', 'Amara', i).seed),
+  );
+  assert.equal(seeds.size, PAGE_COUNT);
+});
+
+test('composePage keeps every point on the page', () => {
+  for (let index = 0; index < PAGE_COUNT; index += 1) {
+    const page = composePage('space dinosaurs', 'Amara', index);
+    for (const line of page.polylines) {
+      for (const [x, y] of line.points) {
+        assert.ok(Number.isFinite(x) && Number.isFinite(y), `page ${index} has a non-finite point`);
+        assert.ok(x >= 0 && x <= PAGE_WIDTH, `page ${index} escapes on x: ${x}`);
+        assert.ok(y >= 0 && y <= PAGE_HEIGHT, `page ${index} escapes on y: ${y}`);
+      }
+    }
+  }
+});
+
+test('composePage never lets two motif boxes overlap', () => {
+  for (const theme of ['space dinosaurs', 'under the sea', 'fairy garden', 'unicorns and zeppelins']) {
+    const plan = planBookPages(theme, 'Amara');
+    for (const planned of plan.pages) {
+      const page = composePage(theme, 'Amara', planned.index, { motifs: planned.motifs });
+      assert.equal(page.placements.length, planned.motifs.length);
+      for (let i = 0; i < page.placements.length; i += 1) {
+        for (let j = i + 1; j < page.placements.length; j += 1) {
+          const a = page.placements[i].bounds;
+          const b = page.placements[j].bounds;
+          const separated = a.x + a.w <= b.x + 1e-6
+            || b.x + b.w <= a.x + 1e-6
+            || a.y + a.h <= b.y + 1e-6
+            || b.y + b.h <= a.y + 1e-6;
+          assert.ok(
+            separated,
+            `${theme} page ${planned.index}: ${page.placements[i].name} overlaps ${page.placements[j].name}`,
+          );
+        }
+      }
+    }
+  }
+});
+
+test('composePage honours an explicit motif list', () => {
+  const page = composePage('space dinosaurs', 'Amara', 0, { motifs: ['star', 'moon', 'rocket'] });
+  assert.deepEqual(page.motifs, ['star', 'moon', 'rocket']);
+  assert.deepEqual(page.placements.map((placement) => placement.name), ['star', 'moon', 'rocket']);
+});
+
+test('composePage draws the frame, the ground line and the motifs', () => {
+  const page = composePage('space dinosaurs', 'Amara', 0, { motifs: ['star'] });
+  const [outer, inner, ground] = page.polylines;
+  assert.equal(outer.width, 4);
+  assert.equal(outer.closed, true);
+  assert.equal(outer.points.length, 4);
+  assert.equal(inner.width, 1.5);
+  assert.equal(inner.closed, true);
+  assert.equal(ground.width, 3);
+  assert.equal(ground.closed, false);
+  assert.equal(ground.points.length, 2);
+  assert.equal(ground.points[0][1], GROUND_Y);
+  assert.ok(page.polylines.length > 8, 'the page carries no motif geometry');
+});
+
+/* ------------------------------------------------------------------ */
+/* Cover composition                                                   */
+/* ------------------------------------------------------------------ */
+
+test('the cover name is never drawn below the 60 pt cap-height floor', () => {
+  const names = ['Amara', 'Liam', 'Zo\u00eb', 'Jos\u00e9', "O'Brien", 'Liam-James', 'Anne Marie', 'ABCDEFGHIJKLMNOPQRST'];
+  for (const name of names) {
+    const cover = composeCover('space dinosaurs', name);
+    assert.ok(cover.nameSize >= MIN_NAME_SIZE, `${name} was drawn at ${cover.nameSize} pt`);
+    assert.ok(cover.nameSize <= MAX_NAME_SIZE, `${name} was drawn at ${cover.nameSize} pt`);
+    assert.ok(cover.nameLines.length >= 1 && cover.nameLines.length <= MAX_NAME_LINES);
+    assert.equal(
+      cover.nameLines.join('').replace(/\s+/g, ''),
+      name.toUpperCase().replace(/\s+/g, ''),
+      `${name} lost characters while wrapping`,
+    );
+  }
+});
+
+test('a twenty-character name wraps rather than shrinking below the floor', () => {
+  const cover = composeCover('under the sea', 'ABCDEFGHIJKLMNOPQRST');
+  assert.equal(cover.nameSize, MIN_NAME_SIZE);
+  assert.ok(cover.nameLines.length > 1, 'the name did not wrap');
+  assert.ok(cover.nameLines.length <= MAX_NAME_LINES);
+  for (const line of cover.nameLines) {
+    assert.ok(
+      measureText(line, { size: cover.nameSize }) <= PAGE_WIDTH - 60,
+      `${line} overflows the cover frame`,
+    );
+  }
+});
+
+test('fitName keeps a short name on one line at the largest size that fits', () => {
+  const fitted = fitName('Anne', { maxWidth: 495 });
+  assert.deepEqual(fitted.lines, ['ANNE']);
+  assert.ok(fitted.size >= MIN_NAME_SIZE && fitted.size < MAX_NAME_SIZE);
+  assert.ok(measureText('ANNE', { size: fitted.size }) <= 495);
+  assert.ok(measureText('ANNE', { size: fitted.size + 1 }) > 495);
+});
+
+test('fitName breaks at a word boundary before breaking inside a word', () => {
+  const fitted = fitName('Anne Marie', { maxWidth: 495 });
+  assert.deepEqual(fitted.lines, ['ANNE', 'MARIE']);
+  assert.ok(fitted.size >= MIN_NAME_SIZE);
+  const widest = fitted.lines.reduce((a, b) => (
+    measureText(a, { size: 1 }) >= measureText(b, { size: 1 }) ? a : b
+  ));
+  assert.ok(measureText(widest, { size: fitted.size }) <= 495, 'the widest line overflows');
+  assert.ok(measureText(widest, { size: fitted.size + 1 }) > 495, 'the size is not maximal');
+});
+
+test('fitName never returns a size below the floor', () => {
+  assert.equal(fitName('ABCDEFGHIJKLMNOPQRST', { maxWidth: 10 }).size, MIN_NAME_SIZE);
+});
+
+test('composeCover rejects a name the lettering cannot draw', () => {
+  assert.throws(() => composeCover('space dinosaurs', '\u0414\u0430\u0440\u0430'), /cannot draw/);
+});
+
+test('composeCover carries the title, subtitle and theme motifs', () => {
+  const cover = composeCover('space dinosaurs', 'Amara');
+  assert.equal(cover.title, COVER_TITLE);
+  assert.equal(cover.subtitle, 'SPACE DINOSAURS');
+  assert.equal(cover.name, 'Amara');
+  assert.ok(cover.motifs.length >= 1 && cover.motifs.length <= 3);
+  for (const motif of cover.motifs) {
+    assert.ok(MOTIF_NAMES.includes(motif), `cover invented motif ${motif}`);
+  }
+  assert.equal(cover.width, PAGE_WIDTH);
+  assert.equal(cover.height, PAGE_HEIGHT);
+});
+
+test('composeCover strips characters the subtitle cannot draw', () => {
+  assert.equal(composeCover('under the sea!', 'Amara').subtitle, 'UNDER THE SEA');
+});
+
+test('composeCover is deterministic', () => {
+  assert.deepEqual(composeCover('space dinosaurs', 'Amara'), composeCover('space dinosaurs', 'Amara'));
+});
+
+/* ------------------------------------------------------------------ */
+/* SVG serialisation                                                   */
+/* ------------------------------------------------------------------ */
+
+test('polylineToPathData emits M, L and Z', () => {
+  assert.equal(polylineToPathData({ points: [[0, 0], [10, 20]], closed: false }), 'M0 0 L10 20');
+  assert.equal(polylineToPathData({ points: [[0, 0], [10, 20], [5, 5]], closed: true }), 'M0 0 L10 20 L5 5 Z');
+});
+
+test('polylinesToSvg fills a filled polyline white and leaves the rest unfilled', () => {
+  const svg = polylinesToSvg([
+    { points: [[0, 0], [10, 0], [10, 10]], closed: true, fill: true, width: 4 },
+    { points: [[0, 0], [10, 10]], closed: false, fill: false, width: 4 },
+  ]);
+  assert.equal((svg.match(/fill="#ffffff"/g) || []).length, 1, 'a filled polyline was not painted white');
+  assert.equal((svg.match(/fill="none"/g) || []).length, 1, 'a stroke-only polyline was filled');
+});
+
+test('polylinesToSvg rounds caps and joins and strokes in black', () => {
+  const svg = polylinesToSvg([{ points: [[0, 0], [1, 1]], closed: false, fill: false, width: 4 }]);
+  assert.ok(svg.includes('stroke="#000000"'));
+  assert.ok(svg.includes('stroke-linecap="round"'));
+  assert.ok(svg.includes('stroke-linejoin="round"'));
+  assert.ok(svg.includes('stroke-width="4"'));
+});
+
+test('polylinesToSvg resolves a relative weight to an absolute width', () => {
+  const svg = polylinesToSvg([{ points: [[0, 0], [1, 1]], closed: false, fill: false, weight: DETAIL_WEIGHT }]);
+  assert.ok(svg.includes(`stroke-width="${STROKE_FLOOR}"`));
+});
+
+test('polylinesToSvg escapes the aria label', () => {
+  const svg = polylinesToSvg([], { label: 'Amara\'s <book> & "more"' });
+  assert.ok(svg.includes('&apos;'));
+  assert.ok(svg.includes('&lt;book&gt;'));
+  assert.ok(svg.includes('&amp;'));
+  assert.ok(svg.includes('&quot;'));
+  assert.ok(!svg.includes('<book>'));
+});
+
+test('toPagePolylines resolves weight to width and defaults the flags', () => {
+  const [resolved] = toPagePolylines([{ points: [[0, 0], [1, 1]], weight: MAIN_WEIGHT }]);
+  assert.equal(resolved.width, STROKE_BASE);
+  assert.equal(resolved.closed, false);
+  assert.equal(resolved.fill, false);
+  const [explicit] = toPagePolylines([{ points: [[0, 0], [1, 1]], width: 9, closed: true, fill: true }]);
+  assert.equal(explicit.width, 9);
+  assert.equal(explicit.closed, true);
+  assert.equal(explicit.fill, true);
+});
+
+test('pageToSvg produces a well-formed standalone document', () => {
+  const svg = pageToSvg(composePage('space dinosaurs', 'Amara', 0));
+  assert.ok(svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg"'));
+  assert.ok(svg.endsWith('</svg>'));
+  assert.ok(svg.includes(`viewBox="0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}"`));
+  assert.ok(svg.includes('aria-label="Colouring page 1"'));
+  assert.equal((svg.match(/<path /g) || []).length, (svg.match(/\/>/g) || []).length);
+  assert.ok(!svg.includes('undefined'));
+  assert.ok(!svg.includes('NaN'));
+});
+
+test('coverToSvg produces a well-formed standalone document', () => {
+  const svg = coverToSvg(composeCover('space dinosaurs', 'Amara'));
+  assert.ok(svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg"'));
+  assert.ok(svg.endsWith('</svg>'));
+  assert.ok(svg.includes('aria-label="Amara&apos;s colouring book cover"'));
+  assert.equal((svg.match(/<path /g) || []).length, (svg.match(/\/>/g) || []).length);
+  assert.ok(!svg.includes('NaN'));
+});
+
+/* ------------------------------------------------------------------ */
+/* Book assembly                                                       */
+/* ------------------------------------------------------------------ */
+
+test('buildPreviewPages returns a cover plus five distinct pages', () => {
+  const book = buildPreviewPages('space dinosaurs', 'Amara');
+  assert.equal(book.cover.index, 0);
+  assert.equal(book.cover.label, 'Cover');
+  assert.equal(book.pages.length, PAGE_COUNT);
+  assert.deepEqual(book.pages.map((page) => page.index), [1, 2, 3, 4, 5]);
+  assert.deepEqual(book.pages.map((page) => page.label), ['Page 1', 'Page 2', 'Page 3', 'Page 4', 'Page 5']);
+  const svgs = new Set([book.cover.svg, ...book.pages.map((page) => page.svg)]);
+  assert.equal(svgs.size, PAGE_COUNT + 1, 'two previews are identical');
+});
+
+test('buildPreviewPages is deterministic', () => {
+  assert.deepEqual(buildPreviewPages('space dinosaurs', 'Amara'), buildPreviewPages('space dinosaurs', 'Amara'));
+});
+
+test('buildPreviewPages varies with the theme and the name', () => {
+  const base = buildPreviewPages('space dinosaurs', 'Amara');
+  assert.notDeepEqual(base, buildPreviewPages('under the sea', 'Amara'));
+  assert.notDeepEqual(base, buildPreviewPages('space dinosaurs', 'Liam'));
+});
+
+test('every preview is a standalone SVG document', () => {
+  const book = buildPreviewPages('fairy garden', 'Zo\u00eb');
+  for (const card of [book.cover, ...book.pages]) {
+    assert.ok(card.svg.startsWith('<svg '), `${card.label} is not an SVG`);
+    assert.ok(card.svg.endsWith('</svg>'), `${card.label} is truncated`);
+    assert.ok(!card.svg.includes('NaN'), `${card.label} contains NaN`);
   }
 });

@@ -224,7 +224,7 @@ export function hasGlyph(char) {
 export function measureText(text, options = {}) {
   const size = options.size ?? 1;
   const letterSpacing = options.letterSpacing ?? DEFAULT_LETTER_SPACING;
-  const chars = [...text];
+  const chars = [...String(text).normalize('NFC')];
   let width = 0;
   for (let i = 0; i < chars.length; i += 1) {
     width += resolveGlyph(chars[i]).w;
@@ -251,7 +251,7 @@ export function layoutText(text, options = {}) {
 
   const polylines = [];
   let cursor = 0;
-  for (const char of text) {
+  for (const char of String(text).normalize('NFC')) {
     const glyph = resolveGlyph(char);
     for (const strokePoints of glyph.s) {
       polylines.push({

@@ -162,8 +162,8 @@ function renderPreviews(previewEl, bookTitle, input, book) {
     figure.setAttribute('data-page-index', String(card.index));
     figure.innerHTML = card.svg;
 
-    const svg = figure.querySelector('svg');
-    if (svg) {
+    const svg = figure.firstElementChild;
+    if (svg && svg.tagName.toLowerCase() === 'svg') {
       svg.removeAttribute('width');
       svg.removeAttribute('height');
       svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
