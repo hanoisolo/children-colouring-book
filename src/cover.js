@@ -210,14 +210,15 @@ export function composeCover(theme, name) {
 
   const fitted = fitName(cleanName, { maxWidth: TEXT_WIDTH });
   const lineGap = fitted.size * 1.35;
-  const blockTop = NAME_CENTRE_Y - (fitted.lines.length * lineGap) / 2;
+  const capBlockHeight = (fitted.lines.length - 1) * lineGap + fitted.size;
+  const blockTop = NAME_CENTRE_Y - capBlockHeight / 2;
   fitted.lines.forEach((line, i) => {
     const lineWidth = measureText(line, { size: fitted.size });
     polylines.push(
       ...toPagePolylines(
         layoutText(line, {
           x: (PAGE_WIDTH - lineWidth) / 2,
-          y: blockTop + i * lineGap + fitted.size,
+          y: blockTop + i * lineGap,
           size: fitted.size,
           weight: MAIN_WEIGHT,
         }),

@@ -883,6 +883,19 @@ test('hasGlyph rejects characters outside the alphabet', () => {
   }
 });
 
+test('every glyph stays inside a sane em box', () => {
+  for (const char of [...ALPHABET, ...DIGITS, ...PUNCTUATION]) {
+    const advance = measureText(char, { size: 100 });
+    assert.ok(advance >= 40 && advance <= 105, `${JSON.stringify(char)} advances ${advance} pt at size 100`);
+    for (const line of layoutText(char, { size: 100 })) {
+      for (const [x, y] of line.points) {
+        assert.ok(x >= -1 && x <= 101, `${JSON.stringify(char)} escapes the em box on x: ${x}`);
+        assert.ok(y >= -35 && y <= 121, `${JSON.stringify(char)} escapes the em box on y: ${y}`);
+      }
+    }
+  }
+});
+
 test('layoutText emits one polyline per glyph stroke', () => {
   const lines = layoutText('AMARA', { size: 60 });
   assert.ok(lines.length > 0);
@@ -970,6 +983,30 @@ test('the page geometry is A4 in points', () => {
   assert.ok(GROUND_Y > PAGE_HEIGHT * 0.6 && GROUND_Y < PAGE_HEIGHT * 0.8);
   assert.equal(MIN_PAGE_MOTIFS, 3);
   assert.equal(MAX_PAGE_MOTIFS, 7);
+});
+
+test('the published page constants are pinned', () => {
+  assert.equal(FRAME_INSET, 24);
+  assert.equal(INNER_FRAME_INSET, 32);
+  assert.equal(GROUND_Y, 606);
+  assert.equal(STROKE_BASE, 5.5);
+  assert.equal(STROKE_FLOOR, 4);
+});
+
+test('the page frame sits at the published insets', () => {
+  const page = composePage('space dinosaurs', 'Amara', 0, { motifs: ['star'] });
+  assert.deepEqual(page.polylines[0].points, [
+    [24, 24],
+    [571.28, 24],
+    [571.28, 817.89],
+    [24, 817.89],
+  ]);
+  assert.deepEqual(page.polylines[1].points, [
+    [32, 32],
+    [563.28, 32],
+    [563.28, 809.89],
+    [32, 809.89],
+  ]);
 });
 
 test('strokeWidthFor never drops below the crayon floor', () => {
@@ -1120,6 +1157,63 @@ test('composeCover carries the title, subtitle and theme motifs', () => {
 
 test('composeCover strips characters the subtitle cannot draw', () => {
   assert.equal(composeCover('under the sea!', 'Amara').subtitle, 'UNDER THE SEA');
+});
+
+test('the published cover constants are pinned', () => {
+  assert.equal(COVER_TITLE, 'MY COLOURING BOOK');
+  assert.equal(MIN_NAME_SIZE, 60);
+  assert.equal(MAX_NAME_SIZE, 120);
+  assert.equal(MAX_NAME_LINES, 4);
+});
+
+test('the cover frame sits at the published insets', () => {
+  const cover = composeCover('space dinosaurs', 'Amara');
+  assert.deepEqual(cover.polylines[0].points, [
+    [20, 20],
+    [575.28, 20],
+    [575.28, 821.89],
+    [20, 821.89],
+  ]);
+  assert.deepEqual(cover.polylines[1].points, [
+    [30, 30],
+    [565.28, 30],
+    [565.28, 811.89],
+    [30, 811.89],
+  ]);
+});
+
+test('the cover title sits on its published baseline', () => {
+  const cover = composeCover('space dinosaurs', 'Amara');
+  const titleCount = layoutText(COVER_TITLE, { size: 26 }).length;
+  const titleLines = cover.polylines.slice(6, 6 + titleCount);
+  assert.equal(titleLines.length, titleCount);
+  const ys = titleLines.flatMap((line) => line.points.map(([, y]) => y));
+  assert.equal(Math.min(...ys), 150);
+  assert.equal(Math.max(...ys), 176);
+});
+
+test('the cover name block is centred on the page', () => {
+  for (const name of ['Amara', 'Anne Marie', 'ABCDEFGHIJKLMNOPQRST']) {
+    const cover = composeCover('space dinosaurs', name);
+    const titleCount = layoutText(COVER_TITLE, { size: 26 }).length;
+    const nameCount = cover.nameLines.reduce(
+      (sum, line) => sum + layoutText(line, { size: cover.nameSize }).length,
+      0,
+    );
+    const nameLines = cover.polylines.slice(6 + titleCount, 6 + titleCount + nameCount);
+    assert.equal(nameLines.length, nameCount);
+    const ys = nameLines.flatMap((line) => line.points.map(([, y]) => y));
+    const capBlockHeight = (cover.nameLines.length - 1) * cover.nameSize * 1.35 + cover.nameSize;
+    const top = Math.min(...ys);
+    assert.ok(
+      Math.abs(top - (400 - capBlockHeight / 2)) < 1e-6,
+      `${name} starts at ${top} instead of ${400 - capBlockHeight / 2}`,
+    );
+    assert.ok(
+      Math.max(...ys) <= top + capBlockHeight + cover.nameSize * 0.1,
+      `${name} descends more than a descender below its cap block`,
+    );
+  }
 });
 
 test('composeCover is deterministic', () => {
