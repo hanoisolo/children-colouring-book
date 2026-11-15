@@ -41,11 +41,14 @@ import {
   MAX_NAME_LENGTH,
   PAGE_COUNT,
   MIN_DISTINCT_PAGE_MOTIF_SETS,
+  COVER_BAND_INSET,
   validateInputs,
   sanitiseFilename,
   planBookPages,
   bookDiversity,
   generateBook,
+  generateImageBook,
+  composeImageCover,
 } from './src/book.js';
 
 import {
@@ -784,12 +787,15 @@ test('app.js is a pure controller with no exports', () => {
 
 test('every export in src/book.js is imported by this suite', () => {
   const expected = [
+    'COVER_BAND_INSET',
     'MAX_NAME_LENGTH',
     'MAX_THEME_LENGTH',
     'MIN_DISTINCT_PAGE_MOTIF_SETS',
     'PAGE_COUNT',
     'bookDiversity',
+    'composeImageCover',
     'generateBook',
+    'generateImageBook',
     'planBookPages',
     'sanitiseFilename',
     'validateInputs',
@@ -2380,4 +2386,204 @@ test('pageContentStream still emits B when stroke is not disabled', () => {
   };
   const stream = pageContentStream({ polylines: [band], width: 595.28, height: 841.89 });
   assert.ok(/\nh\nB$/.test(stream));
+});
+
+/* ------------------------------------------------------------------ */
+/* Image book orchestration                                            */
+/* ------------------------------------------------------------------ */
+
+const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+function bytesToBase64(bytes) {
+  let out = '';
+  for (let i = 0; i < bytes.length; i += 3) {
+    const a = bytes[i];
+    const b = i + 1 < bytes.length ? bytes[i + 1] : 0;
+    const c = i + 2 < bytes.length ? bytes[i + 2] : 0;
+    out += BASE64_ALPHABET[a >> 2];
+    out += BASE64_ALPHABET[((a & 3) << 4) | (b >> 4)];
+    out += i + 1 < bytes.length ? BASE64_ALPHABET[((b & 15) << 2) | (c >> 6)] : '=';
+    out += i + 2 < bytes.length ? BASE64_ALPHABET[c & 63] : '=';
+  }
+  return out;
+}
+
+function imageResponseFor(jpeg) {
+  return jsonResponse({
+    candidates: [
+      {
+        finishReason: 'STOP',
+        content: {
+          parts: [{ inlineData: { mimeType: 'image/jpeg', data: bytesToBase64(jpeg) } }],
+        },
+      },
+    ],
+  });
+}
+
+test('generateImageBook builds a cover and five pages from six images', async () => {
+  const jpeg = makeJpeg({ width: 896, height: 1200 });
+  const fetchImpl = fakeFetch(() => imageResponseFor(jpeg));
+  const book = await generateImageBook({
+    theme: 'space dinosaurs',
+    name: 'Amara',
+    apiKey: 'k',
+    fetchImpl,
+  });
+
+  assert.equal(book.mode, 'image');
+  assert.equal(book.pages.length, PAGE_COUNT);
+  assert.equal(book.cover.index, 0);
+  assert.equal(book.cover.label, 'Cover');
+  assert.equal(book.pages[0].index, 1);
+  assert.equal(book.pages[4].label, 'Page 5');
+  assert.equal(book.title, "Amara's colouring book");
+  assert.equal(book.filename, 'amara.pdf');
+  assert.equal(book.costUsd, 6 * 0.0336);
+  assert.ok(book.pdfBytes instanceof Uint8Array);
+  assert.equal(fetchImpl.calls.length, 6);
+});
+
+test('generateImageBook asks for the cover first, then one prompt per page', async () => {
+  const fetchImpl = fakeFetch(() => imageResponseFor(makeJpeg()));
+  await generateImageBook({ theme: 'space dinosaurs', name: 'Amara', apiKey: 'k', fetchImpl });
+
+  const prompts = fetchImpl.calls.map(
+    (call) => JSON.parse(call.options.body).contents[0].parts[0].text,
+  );
+  assert.equal(prompts.length, 6);
+  assert.match(prompts[0], /This is the cover of a colouring book/);
+  for (let index = 1; index < prompts.length; index += 1) {
+    assert.match(prompts[index], new RegExp(`page ${index} of a book for Amara`));
+  }
+});
+
+test('the cover draws the name as vector strokes over a white band', async () => {
+  const jpeg = makeJpeg({ width: 896, height: 1200 });
+  const fetchImpl = fakeFetch(() => imageResponseFor(jpeg));
+  const book = await generateImageBook({
+    theme: 'space dinosaurs',
+    name: 'Amara',
+    apiKey: 'k',
+    fetchImpl,
+  });
+
+  assert.ok(book.cover.overlaySvg.startsWith('<svg '), 'the overlay is not an SVG');
+  assert.ok(book.cover.overlaySvg.endsWith('</svg>'), 'the overlay is truncated');
+  assert.ok(book.cover.overlaySvg.includes('fill="#ffffff"'), 'no white band');
+  assert.ok(book.cover.overlaySvg.includes('stroke="none"'), 'the band is outlined');
+  assert.ok(book.cover.overlaySvg.includes('stroke="#000000"'), 'the name has no strokes');
+  assert.deepEqual(book.cover.nameLines, ['AMARA']);
+  assert.ok(book.cover.bandHeight > 0);
+});
+
+test('a long name wraps and grows the band instead of overflowing', async () => {
+  const fetchImpl = fakeFetch(() => imageResponseFor(makeJpeg()));
+  const short = await generateImageBook({ theme: 'x', name: 'Amara', apiKey: 'k', fetchImpl });
+  const long = await generateImageBook({
+    theme: 'x',
+    name: 'Maximilian Alexander',
+    apiKey: 'k',
+    fetchImpl,
+  });
+
+  assert.equal(short.cover.nameLines.length, 1);
+  assert.ok(long.cover.nameLines.length >= 2, 'the long name did not wrap');
+  assert.ok(long.cover.bandHeight > short.cover.bandHeight, 'the band did not grow');
+  assert.ok(
+    long.cover.bandHeight < PAGE_HEIGHT / 2,
+    'the band swallowed the illustration',
+  );
+});
+
+test('the cover image is aspect-fitted, not stretched', async () => {
+  const jpeg = makeJpeg({ width: 896, height: 1200 });
+  const fetchImpl = fakeFetch(() => imageResponseFor(jpeg));
+  const book = await generateImageBook({ theme: 'x', name: 'Amara', apiKey: 'k', fetchImpl });
+
+  assert.deepEqual(book.cover.image.rect, fitImageRect(896, 1200));
+  assert.equal(book.cover.image.width, 896);
+  assert.equal(book.cover.image.height, 1200);
+  assert.equal(book.pages[0].image.rect.w, 595.28);
+});
+
+test('the image book PDF carries one XObject per page', async () => {
+  const jpeg = makeJpeg({ width: 896, height: 1200 });
+  const fetchImpl = fakeFetch(() => imageResponseFor(jpeg));
+  const book = await generateImageBook({
+    theme: 'space dinosaurs',
+    name: 'Amara',
+    apiKey: 'k',
+    fetchImpl,
+  });
+
+  const text = pdfText(book.pdfBytes);
+  assert.equal((text.match(/\/Subtype \/Image/g) || []).length, 6);
+  assert.equal((text.match(/\/Filter \/DCTDecode/g) || []).length, 6);
+  assert.ok(text.includes("/Title (Amara's colouring book)"), 'the title is missing');
+  assert.ok(text.includes('/MediaBox [0 0 595.28 841.89]'), 'the page is not A4');
+});
+
+test('the image book PDF xref offsets all land on object headers', async () => {
+  const fetchImpl = fakeFetch(() => imageResponseFor(makeJpeg({ width: 896, height: 1200 })));
+  const book = await generateImageBook({ theme: 'x', name: 'Amara', apiKey: 'k', fetchImpl });
+  const text = pdfText(book.pdfBytes);
+  const startxref = Number(/startxref\n(\d+)\n%%EOF/.exec(text)[1]);
+  const rows = [...text.slice(startxref).matchAll(/^(\d{10}) (\d{5}) ([nf]) $/gm)];
+  assert.ok(rows.length > 0, 'no xref rows');
+  rows.forEach((row, index) => {
+    if (row[3] === 'f') {
+      return;
+    }
+    const offset = Number(row[1]);
+    assert.ok(
+      text.startsWith(`${index} 0 obj`, offset),
+      `xref row ${index} points at ${JSON.stringify(text.slice(offset, offset + 12))}`,
+    );
+  });
+});
+
+test('generateImageBook rejects invalid input without spending a request', async () => {
+  const fetchImpl = fakeFetch(() => imageResponseFor(makeJpeg()));
+  await assert.rejects(
+    () => generateImageBook({ theme: '', name: 'Amara', apiKey: 'k', fetchImpl }),
+    /Enter a theme/,
+  );
+  await assert.rejects(
+    () => generateImageBook({ theme: 'x', name: '', apiKey: 'k', fetchImpl }),
+    /Enter the child's name/,
+  );
+  await assert.rejects(
+    () => generateImageBook({ theme: 'x', name: 'Amara!', apiKey: 'k', fetchImpl }),
+    /may only contain letters/,
+  );
+  assert.equal(fetchImpl.calls.length, 0);
+});
+
+test('generateImageBook refuses to run without a key', async () => {
+  const fetchImpl = fakeFetch(() => imageResponseFor(makeJpeg()));
+  await assert.rejects(
+    () => generateImageBook({ theme: 'x', name: 'Amara', apiKey: '', fetchImpl }),
+    /Enter a Gemini API key/,
+  );
+  assert.equal(fetchImpl.calls.length, 0);
+});
+
+test('generateImageBook surfaces an API failure', async () => {
+  const fetchImpl = fakeFetch(() => jsonResponse({ error: { message: 'bad key' } }, 401));
+  await assert.rejects(
+    () => generateImageBook({ theme: 'x', name: 'Amara', apiKey: 'k', fetchImpl }),
+    /API key was rejected \(401\)/,
+  );
+});
+
+test('composeImageCover rejects bytes that are not a JPEG', () => {
+  assert.throws(
+    () => composeImageCover({
+      theme: 'x',
+      name: 'Amara',
+      image: { bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47]) },
+    }),
+    /not a JPEG/,
+  );
 });

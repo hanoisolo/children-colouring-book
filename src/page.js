@@ -249,9 +249,10 @@ export function polylinesToSvg(polylines, options = {}) {
   const body = polylines
     .map((line) => {
       const fill = line.fill ? '#ffffff' : 'none';
+      const stroke = line.stroke === false ? 'none' : '#000000';
       const strokeWidth = formatNumber(line.width ?? strokeWidthFor(line.weight ?? MAIN_WEIGHT));
       return (
-        `<path d="${polylineToPathData(line)}" fill="${fill}" stroke="#000000"` +
+        `<path d="${polylineToPathData(line)}" fill="${fill}" stroke="${stroke}"` +
         ` stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round"/>`
       );
     })

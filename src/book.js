@@ -14,11 +14,26 @@
 
 import { deriveSeed, hashString, makeRng, pick, pickDistinct, randInt, shuffle } from './rng.js';
 import { motifsForTheme, normaliseTheme } from './themes.js';
-import { MOTIF_NAMES } from './motifs.js';
-import { hasGlyph } from './lettering.js';
-import { MAX_PAGE_MOTIFS, MIN_PAGE_MOTIFS, composePage, pageToSvg } from './page.js';
-import { composeCover, coverToSvg } from './cover.js';
-import { buildPdf } from './pdf.js';
+import { MAIN_WEIGHT, MOTIF_NAMES } from './motifs.js';
+import { hasGlyph, layoutText, measureText } from './lettering.js';
+import {
+  MAX_PAGE_MOTIFS,
+  MIN_PAGE_MOTIFS,
+  PAGE_HEIGHT,
+  PAGE_WIDTH,
+  composePage,
+  pageToSvg,
+  polylinesToSvg,
+  toPagePolylines,
+} from './page.js';
+import { composeCover, coverToSvg, fitName } from './cover.js';
+import { buildPdf, fitImageRect, jpegSize } from './pdf.js';
+import {
+  buildCoverPrompt,
+  buildPagePrompt,
+  estimateImageCost,
+  generateImages,
+} from './imagegen.js';
 
 export const MAX_THEME_LENGTH = 60;
 export const MAX_NAME_LENGTH = 20;
@@ -192,5 +207,163 @@ export function generateBook(theme, name) {
     },
     pages,
     pdfBytes: buildPdf([cover, ...composed], { title }),
+  };
+}
+
+/** Horizontal inset of the cover name band, in points. */
+export const COVER_BAND_INSET = 40;
+
+/**
+ * Compose a cover from a generated illustration plus the child's name.
+ *
+ * The name is drawn as vector strokes, not asked of the image model, because a
+ * model will misspell a name and a misspelled name is a defect rather than a
+ * cosmetic issue. A white band across the top of the page carries the name, and
+ * its height follows the fitted name block so a wrapped 20-character name cannot
+ * overflow it.
+ *
+ * The band and the name are one polyline set, so the PDF and the browser preview
+ * render the same geometry from the same source.
+ *
+ * @param {{ theme: string, name: string, image: { bytes: Uint8Array, base64?: string, mimeType?: string } }} input
+ * @returns {object}
+ */
+export function composeImageCover({ theme, name, image }) {
+  const cleanName = String(name).trim().replace(/\s+/g, ' ');
+  const frame = jpegSize(image.bytes);
+  const rect = fitImageRect(frame.width, frame.height, PAGE_WIDTH, PAGE_HEIGHT);
+
+  const fitted = fitName(cleanName, { maxWidth: PAGE_WIDTH - 2 * COVER_BAND_INSET });
+  const lineGap = fitted.size * 1.35;
+  const blockHeight = (fitted.lines.length - 1) * lineGap + fitted.size;
+  const padding = fitted.size * 0.35;
+  const bandHeight = blockHeight + 2 * padding;
+
+  const polylines = [
+    {
+      points: [[0, 0], [PAGE_WIDTH, 0], [PAGE_WIDTH, bandHeight], [0, bandHeight]],
+      closed: true,
+      fill: true,
+      stroke: false,
+      width: 4,
+    },
+  ];
+
+  fitted.lines.forEach((line, index) => {
+    const lineWidth = measureText(line, { size: fitted.size });
+    polylines.push(
+      ...toPagePolylines(
+        layoutText(line, {
+          x: (PAGE_WIDTH - lineWidth) / 2,
+          y: padding + index * lineGap,
+          size: fitted.size,
+          weight: MAIN_WEIGHT,
+        }),
+      ),
+    );
+  });
+
+  const placed = { ...image, width: frame.width, height: frame.height, rect };
+
+  return {
+    index: 0,
+    label: 'Cover',
+    image: placed,
+    overlaySvg: polylinesToSvg(polylines, {
+      width: PAGE_WIDTH,
+      height: PAGE_HEIGHT,
+      label: `${cleanName}'s colouring book cover`,
+    }),
+    bandHeight,
+    nameLines: fitted.lines,
+    nameSize: fitted.size,
+    motifs: [],
+    pdfPage: { polylines, image: placed, width: PAGE_WIDTH, height: PAGE_HEIGHT },
+  };
+}
+
+/**
+ * Generate a complete book from images.
+ *
+ * Six requests: one cover, five interior pages. The prompts are deterministic —
+ * the same theme and name always ask for the same six pictures — but the images
+ * themselves are not, so the byte-identical guarantee that holds for
+ * `generateBook` does not hold here. That is the trade the user asked for.
+ *
+ * @param {{
+ *   theme: string,
+ *   name: string,
+ *   apiKey: string,
+ *   fetchImpl?: Function,
+ *   model?: string,
+ *   signal?: AbortSignal,
+ * }} input
+ * @returns {Promise<object>}
+ */
+export async function generateImageBook({ theme, name, apiKey, fetchImpl, model, signal }) {
+  const result = validateInputs(theme, name);
+  if (!result.ok) {
+    throw new Error(result.errors.join(' '));
+  }
+
+  const plan = planBookPages(result.theme, result.name);
+  const prompts = [
+    buildCoverPrompt({ theme: result.theme, name: result.name }),
+    ...plan.pages.map((page) => buildPagePrompt({
+      theme: result.theme,
+      name: result.name,
+      pageIndex: page.index,
+      motifs: page.motifs,
+    })),
+  ];
+
+  const images = await generateImages({ apiKey, prompts, model, fetchImpl, signal });
+  const [coverImage, ...pageImages] = images;
+
+  const cover = composeImageCover({
+    theme: result.theme,
+    name: result.name,
+    image: coverImage,
+  });
+
+  const pages = pageImages.map((image, index) => {
+    const frame = jpegSize(image.bytes);
+    return {
+      index: index + 1,
+      label: `Page ${index + 1}`,
+      image: {
+        ...image,
+        width: frame.width,
+        height: frame.height,
+        rect: fitImageRect(frame.width, frame.height, PAGE_WIDTH, PAGE_HEIGHT),
+      },
+      motifs: plan.pages[index].motifs,
+    };
+  });
+
+  const title = `${result.name}'s colouring book`;
+  const pdfBytes = buildPdf(
+    [
+      cover.pdfPage,
+      ...pages.map((page) => ({
+        polylines: [],
+        image: page.image,
+        width: PAGE_WIDTH,
+        height: PAGE_HEIGHT,
+      })),
+    ],
+    { title },
+  );
+
+  return {
+    title,
+    theme: result.theme,
+    name: result.name,
+    filename: sanitiseFilename(result.name),
+    mode: 'image',
+    cover,
+    pages,
+    pdfBytes,
+    costUsd: estimateImageCost(images.length),
   };
 }
