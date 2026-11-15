@@ -88,13 +88,18 @@ This invariant is never weakened, skipped, or broadened to make a suite pass.
 
 ## Status
 
-- **Phase 1 complete. Phase 2 — Segment 1 pending.**
+- **Phase 2 complete. Phase 3 — Segment 1 pending.**
 - Roadmap: `plans/MASTER_ROADMAP.md` (3 phases x 3 segments).
-- Gate: `node test_colouring_book.js` -> 57 tests, 0 failures, 0 skipped.
-- Landed so far: `package.json`, `src/rng.js`, `src/themes.js`, `index.html`,
-  `styles.css`, `app.js`, `test_colouring_book.js`, `.gitattributes`.
+- Gate: `node test_colouring_book.js` -> 117 tests, 0 failures, 0 skipped.
+- Landed so far: `package.json`, `src/rng.js`, `src/themes.js`, `src/motifs.js`,
+  `src/lettering.js`, `src/page.js`, `src/cover.js`, `index.html`, `styles.css`,
+  `app.js`, `test_colouring_book.js`, `.gitattributes`.
 - Phase 1 milestone review: `AUDIT: PASS` (`plans/milestone_review.md`).
-- Phase-boundary milestone review required after Phase 2 Segment 3 (Section 7).
+- Phase 2 milestone review: `AUDIT: PASS` (`plans/milestone_review.md`).
+- Phase 2 Stage 6: `SCAN: PASS` (200 assertions added, 4 removed and justified
+  in `plans/removal_justification.md`); mutation 72.0% (288 killed, 112
+  survived) recorded in `plans/mutation_baseline.json`.
+- Phase-boundary milestone review required after Phase 3 Segment 3 (Section 7).
 
 ## Stage 6 mutation gate
 
@@ -136,3 +141,31 @@ review of the Phase 1 boundary and are not optional refinements.
    earlier. When moving them to `src/book.js`, update the test imports and the
    `app.js` export-parity expectation in the same commit so no duplicate
    implementation survives.
+
+## Phase 3 architectural constraints (from the Phase 2 milestone review)
+
+Binding for Phase 3. They come from the architect's review of the Phase 2
+boundary.
+
+1. **Exercise the filled path end to end.** No motif currently sets
+   `fill: true`, so the PDF `B`-versus-`S` branch would ship untested. Phase 3
+   Segment 1 adds `fill: true` to a few closed foreground shapes in
+   `src/motifs.js` (rocket window, house roof and door, car wheels drawn after
+   the chassis) so a real filled shape reaches the PDF writer.
+2. **Graphics state parity.** `src/pdf.js` must emit `1 J 1 j` (round caps and
+   joins — critical for the open lettering strokes), set `1 1 1 rg` and
+   `0 0 0 RG` so `B` paints white rather than PDF's default black, and guard
+   against `closed: false, fill: true`, because PDF's `B` implicitly closes an
+   open path.
+3. **Binary PDF structure.** Compute `xref` offsets in exact bytes over a
+   `Uint8Array` — never JS string `.length`, never Node `Buffer`. Emit strict
+   20-byte `xref` rows. Encode non-ASCII names (`Zoë`, `José`) in `/Info` as
+   UTF-16BE hex or PDFDocEncoding, not raw UTF-8 literals.
+4. **IR hygiene.** The Y flip stays pure: `src/pdf.js` must not mutate the
+   shared polyline points in place. When `validateInputs` and
+   `sanitiseFilename` move to `src/book.js`, update the export-parity and
+   determinism tests in the same commit.
+5. **Accepted mutation survivors.** The 112 survivors are curve-sampling loop
+   bounds, unexported layout constants, and four DOM-only `app.js` lines. Do
+   not pin them; pinning every internal constant would make any visual
+   adjustment a test failure.

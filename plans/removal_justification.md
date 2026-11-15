@@ -55,7 +55,7 @@ assert strictly more than the originals.
 
 ## Net effect
 
-- Assertions: 172 added, 4 removed.
-- Test declarations: 53 added, 3 removed.
-- Suite size: 57 tests at the Phase 1 baseline, 107 tests now, 0 skipped,
+- Assertions: 200 added, 4 removed.
+- Test declarations: 63 added, 3 removed.
+- Suite size: 57 tests at the Phase 1 baseline, 117 tests now, 0 skipped,
   0 todo.
