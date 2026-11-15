@@ -1,18 +1,22 @@
 /**
  * DOM controller for the colouring book.
  *
- * Phase 1 scope: validate the form, resolve the theme to a motif vocabulary,
- * and render deterministic placeholder cards. The art engine and the PDF
- * writer arrive in later phases; the download button stays disabled until
- * there is a real book to download.
+ * Phase 2 scope: validate the form, plan the motif assignment for each page,
+ * compose the cover and five interior pages as polylines, and render them as
+ * inline SVG previews. The PDF writer arrives in Phase 3; the download button
+ * stays disabled until there is a real file to download.
  *
  * The pure helpers are exported so the headless suite can exercise them
  * without a DOM. Importing this module in Node is safe: the DOM wiring only
  * runs when `document` exists.
  */
 
-import { deriveSeed, hashString, makeRng, pickDistinct } from './src/rng.js';
+import { deriveSeed, hashString, makeRng, pick, pickDistinct, randInt, shuffle } from './src/rng.js';
 import { motifsForTheme, normaliseTheme } from './src/themes.js';
+import { MOTIF_NAMES } from './src/motifs.js';
+import { hasGlyph } from './src/lettering.js';
+import { MAX_PAGE_MOTIFS, MIN_PAGE_MOTIFS, composePage, pageToSvg } from './src/page.js';
+import { composeCover, coverToSvg } from './src/cover.js';
 
 export const MAX_THEME_LENGTH = 60;
 export const MAX_NAME_LENGTH = 20;
@@ -44,6 +48,8 @@ export function validateInputs(theme, name) {
     errors.push(`Name must be ${MAX_NAME_LENGTH} characters or fewer.`);
   } else if (!NAME_PATTERN.test(cleanName)) {
     errors.push('Name may only contain letters, spaces, hyphens and apostrophes.');
+  } else if ([...cleanName.toUpperCase()].some((char) => !hasGlyph(char))) {
+    errors.push('Name may only use letters the book can draw.');
   }
 
   return { ok: errors.length === 0, errors, theme: cleanTheme, name: cleanName };
@@ -69,23 +75,69 @@ export function sanitiseFilename(name) {
 }
 
 /**
- * Deterministic placeholder pages for the current theme and name. Each page
- * draws its own motif subset from its own derived seed, so the cards differ
- * from each other while the whole set stays reproducible.
+ * Plan which motifs each page draws.
+ *
+ * Every page gets between `MIN_PAGE_MOTIFS` and `MAX_PAGE_MOTIFS` distinct
+ * motifs, at least one of them drawn from the theme's own vocabulary, and each
+ * page derives its own seed so the five pages differ from one another while
+ * the whole book stays reproducible.
  *
  * @param {string} theme
  * @param {string} name
  * @returns {{ seed: number, motifs: string[], matched: boolean, pages: Array<{ index: number, motifs: string[] }> }}
  */
-export function buildPlaceholderPages(theme, name) {
+export function planBookPages(theme, name) {
   const { motifs, matched } = motifsForTheme(theme);
+  const drawable = motifs.filter((motif) => MOTIF_NAMES.includes(motif));
+  const pool = drawable.length > 0 ? drawable : MOTIF_NAMES;
   const seed = hashString(`${normaliseTheme(theme)}\u0000${String(name).trim().toLowerCase()}`);
+
   const pages = [];
   for (let index = 0; index < PAGE_COUNT; index += 1) {
     const rng = makeRng(deriveSeed(seed, index));
-    pages.push({ index, motifs: pickDistinct(rng, motifs, Math.min(3, motifs.length)) });
+    const count = randInt(rng, MIN_PAGE_MOTIFS, MAX_PAGE_MOTIFS);
+    const chosen = [pick(rng, pool)];
+    const rest = MOTIF_NAMES.filter((motif) => !chosen.includes(motif));
+    chosen.push(...pickDistinct(rng, rest, count - 1));
+    pages.push({ index, motifs: shuffle(rng, chosen) });
   }
+
   return { seed, motifs, matched, pages };
+}
+
+/**
+ * Compose the whole book as SVG strings: one cover plus `PAGE_COUNT` pages.
+ *
+ * @param {string} theme
+ * @param {string} name
+ * @returns {{
+ *   seed: number,
+ *   motifs: string[],
+ *   matched: boolean,
+ *   cover: { index: number, label: string, svg: string },
+ *   pages: Array<{ index: number, label: string, svg: string }>,
+ * }}
+ */
+export function buildPreviewPages(theme, name) {
+  const book = planBookPages(theme, name);
+  const cover = composeCover(theme, name);
+
+  const pages = book.pages.map((page) => {
+    const composed = composePage(theme, name, page.index, { motifs: page.motifs });
+    return {
+      index: page.index + 1,
+      label: `Page ${page.index + 1}`,
+      svg: pageToSvg(composed),
+    };
+  });
+
+  return {
+    seed: book.seed,
+    motifs: book.motifs,
+    matched: book.matched,
+    cover: { index: 0, label: 'Cover', svg: coverToSvg(cover) },
+    pages,
+  };
 }
 
 /**
@@ -94,38 +146,33 @@ export function buildPlaceholderPages(theme, name) {
  * @param {HTMLElement} previewEl
  * @param {HTMLElement} bookTitle
  * @param {{ name: string }} input
- * @param {{ motifs: string[], pages: Array<{ index: number, motifs: string[] }> }} book
+ * @param {ReturnType<typeof buildPreviewPages>} book
  */
-function renderPlaceholders(previewEl, bookTitle, input, book) {
+function renderPreviews(previewEl, bookTitle, input, book) {
   for (const node of previewEl.querySelectorAll('[data-role="page-preview"]')) {
     node.remove();
   }
 
   bookTitle.textContent = `${input.name}'s colouring book`;
 
-  const cards = [
-    { index: 0, label: 'Cover', motifs: book.motifs.slice(0, 3) },
-    ...book.pages.map((page) => ({
-      index: page.index + 1,
-      label: `Page ${page.index + 1}`,
-      motifs: page.motifs,
-    })),
-  ];
-
-  for (const card of cards) {
+  for (const card of [book.cover, ...book.pages]) {
     const figure = document.createElement('figure');
     figure.className = 'page-preview';
     figure.setAttribute('data-role', 'page-preview');
     figure.setAttribute('data-page-index', String(card.index));
+    figure.innerHTML = card.svg;
+
+    const svg = figure.querySelector('svg');
+    if (svg) {
+      svg.removeAttribute('width');
+      svg.removeAttribute('height');
+      svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    }
 
     const caption = document.createElement('figcaption');
     caption.textContent = card.label;
 
-    const list = document.createElement('p');
-    list.className = 'motif-list';
-    list.textContent = card.motifs.join(' \u00b7 ');
-
-    figure.append(caption, list);
+    figure.append(caption);
     previewEl.append(figure);
   }
 }
@@ -156,9 +203,18 @@ function init() {
       return;
     }
 
+    let book;
+    try {
+      book = buildPreviewPages(result.theme, result.name);
+    } catch (error) {
+      errorEl.textContent = error.message;
+      statusEl.textContent = '';
+      downloadBtn.disabled = true;
+      return;
+    }
+
     errorEl.textContent = '';
-    const book = buildPlaceholderPages(result.theme, result.name);
-    renderPlaceholders(previewEl, bookTitle, result, book);
+    renderPreviews(previewEl, bookTitle, result, book);
     statusEl.textContent = `Preview ready for ${result.name}: a cover and ${book.pages.length} pages.`;
     downloadBtn.disabled = true;
     generateBtn.setAttribute('aria-busy', 'false');
