@@ -92,14 +92,21 @@ canonical invocation is:
 python ../ask_gemini.py --mutation-baseline <sha> \
   --mutation-gate "node test_colouring_book.js" \
   --mutation-skip "*.html" --mutation-skip "*.css" --mutation-skip "plans/*" \
+  --mutation-skip "scripts/*" \
   --mutation-out plans/mutation_report.md
 ```
 
-`index.html`, `styles.css`, `smoke.html` and `plans/live_check.mjs` cannot be
-constrained by a unit test, so every mutant in them survives. Without the skip
-globs they produced 69 of 88 survivors and buried the 19 that described real
-source. `dist/colouring-book.html` needs no glob: build output is skipped by
-directory. Skipped files are named in the report, so the exclusion is visible.
+`index.html`, `styles.css`, `smoke.html`, `plans/live_check.mjs` and
+`scripts/release.sh` cannot be constrained by a unit test, so every mutant in
+them survives. Without the skip globs they produced 69 of 88 survivors and
+buried the 19 that described real source. `dist/colouring-book.html` needs no
+glob: build output is skipped by directory. Skipped files are named in the
+report, so the exclusion is visible.
+
+`scripts/release.sh` is a bash harness, so the node gate cannot exercise it at
+all — it is verified by running it, not by the suite. It is skipped as a scope
+declaration, not a waiver: on its first run `--verify` found the published
+release asset serving an older bundle than `master`.
 
 **No test may call the live image API.** `src/imagegen.js` resolves `fetch` from
 `globalThis` at call time so the suite can stub it. A test that reaches the
@@ -358,10 +365,10 @@ survivors as coverage.
   `plans/milestone_review_phaseN.md`.
 - Phase 3 Stage 6: `SCAN: PASS` (92 assertions added, 9 removed and justified in
   `plans/removal_justification.md`).
-- Mutation gate, current: `MUTATION: REVIEW` — 86.4% (184 killed, 29 survived,
-  9 invalid, 222 mutants, no truncation) recorded in
-  `plans/mutation_baseline.json`. `src/book.js` and `src/page.js` are at zero
-  survivors. The 29 that remain are listed below.
+- Mutation gate at the Phase 3 boundary: `MUTATION: REVIEW` — 86.4% (184 killed,
+  29 survived, 9 invalid, 222 mutants). That figure described the upgrade diff
+  against `d846283` and is superseded by the audit fix pass below; the 29
+  survivors it named are listed further down.
 - No further phase is planned. The next step, if requested, is the `gemini-ship`
   skill: documentation, full verification, security audit, publish or PR.
 
@@ -394,6 +401,13 @@ re-implemented.
   restored rather than waived.
 - Evidence trail: `plans/audit_fix_brief.md`, `plans/audit_fix_plan.md`,
   `plans/stage6_scan.md`, `plans/removal_justification_audit_fix.md`.
+- Stage 6 mutation gate: **`MUTATION: PASS`** — 63 mutants, 60 killed, **0
+  survived**, 3 invalid, 100% score, against `08b7e24`. Every changed line in
+  `app.js`, `src/book.js` and `src/imagegen.js` is constrained by an assertion.
+  `scripts/release.sh` is skipped as a bash harness the node gate cannot
+  exercise. The baseline was reset twice (once for the new ref, once for the new
+  skip glob) because survivor counts are only comparable across identical mutant
+  sets.
 
 ## Stage 6 mutation gate
 

@@ -1,3 +1,20 @@
 {
-  "files": {}
+  "files": {
+    "app.js": {
+      "invalid": 0,
+      "killed": 14,
+      "survived": 0
+    },
+    "src/book.js": {
+      "invalid": 3,
+      "killed": 23,
+      "survived": 0
+    },
+    "src/imagegen.js": {
+      "invalid": 0,
+      "killed": 23,
+      "survived": 0
+    }
+  },
+  "timestamp": "2026-11-15T16:05:23Z"
 }
