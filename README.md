@@ -25,7 +25,7 @@ module, and `app.js` imports the rest of `src/` directly.
 node test_colouring_book.js
 ```
 
-140 tests, 419 assertions, no dependencies. The suite runs offline in Node and
+147 tests, 441 assertions, no dependencies. The suite runs offline in Node and
 covers the whole pipeline headlessly — the same functions the browser calls.
 
 ## How it works
@@ -91,4 +91,4 @@ AGENTS.md               build rules and architectural constraints
 
 ## Licence
 
-Private project. No licence granted.
+No licence is granted. All rights reserved.

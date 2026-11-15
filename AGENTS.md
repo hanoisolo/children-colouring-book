@@ -90,12 +90,19 @@ This invariant is never weakened, skipped, or broadened to make a suite pass.
 
 - **Phase 3 complete. All three roadmap phases are done; the project is ship-ready.**
 - Roadmap: `plans/MASTER_ROADMAP.md` (3 phases x 3 segments).
-- Gate: `node test_colouring_book.js` -> 140 tests, 419 assertions, 0 failures,
+- Gate: `node test_colouring_book.js` -> 147 tests, 441 assertions, 0 failures,
   0 skipped.
 - Landed: `package.json`, `src/rng.js`, `src/themes.js`, `src/motifs.js`,
   `src/lettering.js`, `src/page.js`, `src/cover.js`, `src/pdf.js`, `src/book.js`,
   `index.html`, `styles.css`, `app.js`, `test_colouring_book.js`,
-  `.gitattributes`.
+  `.gitattributes`, `README.md`.
+- Pre-ship security audit: `AUDIT: PASS` (`plans/security_audit.md`). The first
+  pass returned `AUDIT: FAIL` and found four real defects, all fixed: a
+  prototype-chain lookup in `motifsForTheme` that crashed on the theme
+  `constructor`, Windows reserved device filenames from `sanitiseFilename`,
+  lone surrogates emitted verbatim by `pdfTextString`, and a hardcoded machine
+  path in this file. Every prototype-key lookup in the project now uses
+  `Object.hasOwn`.
 - Phase 1 milestone review: `AUDIT: PASS` (`plans/milestone_review_phase1.md`).
 - Phase 2 milestone review: `AUDIT: PASS` (`plans/milestone_review_phase2.md`).
 - Phase 3 milestone review: `AUDIT: PASS` (`plans/milestone_review_phase3.md`).
