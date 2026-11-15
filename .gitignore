@@ -34,6 +34,8 @@ plans/stage6_test.diff
 plans/stage6_scan.md
 plans/mutation_report.md
 
-# Generated build output
-dist/
+# Generated build output. The single-file app is committed so it can be
+# downloaded straight from the repository; everything else in dist/ is not.
+dist/*
+!dist/colouring-book.html
 *.pdf

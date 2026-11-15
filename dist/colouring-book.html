@@ -1,0 +1,3414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>My Colouring Book</title>
+  <style>
+:root {
+  --ink: #111111;
+  --muted: #5c5c5c;
+  --line: #d8d8d8;
+  --paper: #ffffff;
+  --wash: #f6f4ef;
+  --accent: #1f4e79;
+  --radius: 10px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 2rem 1.25rem 4rem;
+  background: var(--wash);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+}
+
+.site-header {
+  max-width: 60rem;
+  margin: 0 auto 2rem;
+  text-align: center;
+}
+
+.site-header h1 {
+  margin: 0 0 0.35rem;
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  letter-spacing: -0.01em;
+}
+
+.tagline {
+  margin: 0;
+  color: var(--muted);
+}
+
+.layout {
+  max-width: 60rem;
+  margin: 0 auto;
+}
+
+.book-form {
+  display: grid;
+  gap: 1.25rem;
+  padding: 1.5rem;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.field label {
+  font-weight: 600;
+}
+
+.field input {
+  padding: 0.65rem 0.75rem;
+  font: inherit;
+  color: inherit;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.field input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+button {
+  padding: 0.7rem 1.1rem;
+  font: inherit;
+  font-weight: 600;
+  color: var(--paper);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+button:disabled {
+  color: var(--muted);
+  background: var(--wash);
+  border-color: var(--line);
+  cursor: not-allowed;
+}
+
+button:not(:disabled):hover {
+  filter: brightness(1.08);
+}
+
+.status,
+.error {
+  margin: 1rem 0 0;
+  min-height: 1.5rem;
+}
+
+.status {
+  color: var(--muted);
+}
+
+.error {
+  color: #a3231b;
+  font-weight: 600;
+}
+
+.boot-error {
+  margin: 0 0 1.5rem;
+  padding: 0.9rem 1rem;
+  border: 2px solid #a3231b;
+  border-radius: 6px;
+  color: #a3231b;
+  background: #fdf2f1;
+  font-weight: 600;
+}
+
+.boot-error code {
+  font-weight: 400;
+}
+
+.book {
+  margin-top: 2rem;
+}
+
+.book h2 {
+  margin: 0 0 1rem;
+  font-size: 1.35rem;
+}
+
+.preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.page-preview {
+  margin: 0;
+  padding: 1rem;
+  aspect-ratio: 1 / 1.414;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.page-preview figcaption {
+  font-weight: 600;
+}
+
+.optional {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.cost-note {
+  margin: 1rem 0 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+/*
+ * An image card is a page-shaped frame. The JPEG is positioned inside it by the
+ * same rect the PDF uses, and the overlay SVG covers the whole page, so the
+ * preview and the print cannot disagree about where the artwork and the name
+ * sit.
+ */
+.page-frame {
+  position: relative;
+  flex: 1 1 auto;
+  width: 100%;
+  aspect-ratio: 595.28 / 841.89;
+  overflow: hidden;
+  background: var(--paper);
+}
+
+.page-image {
+  position: absolute;
+  display: block;
+}
+
+.page-overlay {
+  position: absolute;
+  inset: 0;
+}
+
+.page-overlay svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.motif-list {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+@media print {
+  body {
+    padding: 0;
+    background: var(--paper);
+  }
+
+  .book-form,
+  .status,
+  .error,
+  .cost-note,
+  #download-btn {
+    display: none;
+  }
+
+  .preview-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .page-preview {
+    break-inside: avoid;
+    border-color: #000000;
+  }
+}
+</style>
+</head>
+<body>
+  <header class="site-header">
+    <h1>My Colouring Book</h1>
+    <p class="tagline">A personalised colouring book, drawn from a theme and a name.</p>
+  </header>
+
+  <main class="layout">
+    <p class="boot-error" hidden>
+      This app has to be served over HTTP. Opening <code>index.html</code> straight
+      from disk blocks ES modules, so nothing will generate. Run
+      <code>npm start</code> and open <code>http://localhost:8000</code>, or use the
+      single-file build in <code>dist/colouring-book.html</code>, which needs no server.
+    </p>
+
+    <form class="book-form" novalidate>
+      <div class="field">
+        <label for="theme-input">Theme</label>
+        <input
+          id="theme-input"
+          name="theme"
+          type="text"
+          maxlength="60"
+          placeholder="space dinosaurs"
+          autocomplete="off"
+          required>
+        <p class="hint">Try &ldquo;space dinosaurs&rdquo;, &ldquo;under the sea&rdquo;, or &ldquo;fairy garden&rdquo;.</p>
+      </div>
+
+      <div class="field">
+        <label for="name-input">Child&rsquo;s name</label>
+        <input
+          id="name-input"
+          name="name"
+          type="text"
+          maxlength="20"
+          placeholder="Amara"
+          autocomplete="off"
+          required>
+        <p class="hint">Letters, spaces, hyphens and apostrophes. Up to 20 characters.</p>
+      </div>
+
+      <div class="field">
+        <label>
+          Gemini API key <span class="optional">(optional)</span>
+          <input
+            data-role="api-key"
+            name="apiKey"
+            type="password"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="AIza&hellip;">
+        </label>
+        <p class="hint">
+          With a key, the six pages are drawn by Gemini&rsquo;s cheapest image model.
+          Without one, the book is drawn offline as vector art. The key stays in this
+          tab and is sent only to <code>generativelanguage.googleapis.com</code>.
+        </p>
+      </div>
+
+      <button id="generate-btn" type="submit">Generate book</button>
+    </form>
+
+    <p data-role="cost-note" class="cost-note"></p>
+    <p id="status" class="status" aria-live="polite"></p>
+    <p id="error" class="error" role="alert"></p>
+
+    <section class="book" aria-labelledby="book-title">
+      <h2 id="book-title">Your book</h2>
+      <div id="preview" class="preview-grid">
+        <figure class="page-preview" data-role="page-preview" data-page-index="0">
+          <figcaption>Cover</figcaption>
+          <p class="motif-list">Your pages will appear here.</p>
+        </figure>
+      </div>
+      <button id="download-btn" type="button" disabled>Download PDF</button>
+    </section>
+  </main>
+
+  
+  <script>
+(function () {
+'use strict';
+
+const __mod_src_rng = (function () {
+/**
+ * Deterministic pseudo-randomness for the colouring book.
+ *
+ * Every draw in this project comes from here: no Math.random, no Date.now, no
+ * locale-dependent ordering. The same seed always produces the same sequence,
+ * so the same (theme, name) pair always produces the same book.
+ */
+
+const FNV_OFFSET_BASIS = 0x811c9dc5;
+const FNV_PRIME = 0x01000193;
+
+/**
+ * FNV-1a over UTF-16 code units. Stable across engines and Node versions.
+ *
+ * @param {string} input
+ * @returns {number} unsigned 32-bit integer
+ */
+function hashString(input) {
+  if (typeof input !== 'string') {
+    throw new TypeError(`hashString expects a string, received ${typeof input}`);
+  }
+  let hash = FNV_OFFSET_BASIS;
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, FNV_PRIME);
+  }
+  return hash >>> 0;
+}
+
+/**
+ * Mulberry32. Returns a function producing floats in [0, 1).
+ *
+ * @param {number} seed
+ * @returns {() => number}
+ */
+function makeRng(seed) {
+  if (!Number.isInteger(seed)) {
+    throw new TypeError(`makeRng expects an integer seed, received ${typeof seed}`);
+  }
+  let state = seed >>> 0;
+  return function next() {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Mix a seed with an index so each page gets its own independent stream while
+ * the book as a whole stays reproducible.
+ *
+ * @param {number} seed
+ * @param {number} index
+ * @returns {number} unsigned 32-bit integer
+ */
+function deriveSeed(seed, index) {
+  if (!Number.isInteger(seed)) {
+    throw new TypeError(`deriveSeed expects an integer seed, received ${typeof seed}`);
+  }
+  if (!Number.isInteger(index)) {
+    throw new TypeError(`deriveSeed expects an integer index, received ${typeof index}`);
+  }
+  let h = (seed ^ Math.imul(index + 1, 0x9e3779b9)) >>> 0;
+  h = Math.imul(h ^ (h >>> 16), 0x21f0aaad) >>> 0;
+  h = Math.imul(h ^ (h >>> 15), 0x735a2d97) >>> 0;
+  return (h ^ (h >>> 15)) >>> 0;
+}
+
+/**
+ * Integer in [min, max], inclusive.
+ *
+ * @param {() => number} rng
+ * @param {number} min
+ * @param {number} max
+ * @returns {number}
+ */
+function randInt(rng, min, max) {
+  if (!Number.isInteger(min) || !Number.isInteger(max)) {
+    throw new TypeError('randInt expects integer bounds');
+  }
+  if (max < min) {
+    throw new RangeError(`randInt bounds reversed: ${min} > ${max}`);
+  }
+  return min + Math.floor(rng() * (max - min + 1));
+}
+
+/**
+ * One element drawn uniformly from a non-empty array.
+ *
+ * @param {() => number} rng
+ * @param {readonly unknown[]} items
+ * @returns {unknown}
+ */
+function pick(rng, items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new RangeError('pick expects a non-empty array');
+  }
+  return items[Math.floor(rng() * items.length)];
+}
+
+/**
+ * `count` distinct elements, in draw order. Never returns duplicates, and
+ * clamps to the pool size rather than throwing.
+ *
+ * @param {() => number} rng
+ * @param {readonly unknown[]} items
+ * @param {number} count
+ * @returns {unknown[]}
+ */
+function pickDistinct(rng, items, count) {
+  if (!Array.isArray(items)) {
+    throw new TypeError('pickDistinct expects an array');
+  }
+  if (!Number.isInteger(count) || count < 0) {
+    throw new TypeError(`pickDistinct expects a non-negative integer count, received ${count}`);
+  }
+  const pool = items.slice();
+  const take = Math.min(count, pool.length);
+  const out = [];
+  for (let i = 0; i < take; i += 1) {
+    const j = i + Math.floor(rng() * (pool.length - i));
+    const swap = pool[i];
+    pool[i] = pool[j];
+    pool[j] = swap;
+    out.push(pool[i]);
+  }
+  return out;
+}
+
+/**
+ * Fisher-Yates shuffle of a copy. The input array is never mutated.
+ *
+ * @param {() => number} rng
+ * @param {readonly unknown[]} items
+ * @returns {unknown[]}
+ */
+function shuffle(rng, items) {
+  if (!Array.isArray(items)) {
+    throw new TypeError('shuffle expects an array');
+  }
+  const out = items.slice();
+  for (let i = out.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rng() * (i + 1));
+    const swap = out[i];
+    out[i] = out[j];
+    out[j] = swap;
+  }
+  return out;
+}
+
+  return { hashString, makeRng, deriveSeed, randInt, pick, pickDistinct, shuffle };
+})();
+
+const __mod_src_themes = (function () {
+/**
+ * Theme interpretation: turn a free-text theme into a vocabulary of motifs.
+ *
+ * The mapping is deliberately small and explicit. A theme that matches nothing
+ * falls back to FALLBACK_MOTIFS, which is a documented, reachable set rather
+ * than an error, so the app always produces a book.
+ */
+
+/** Words that carry no motif meaning and are dropped before matching. */
+const STOPWORDS = Object.freeze([
+  'the',
+  'a',
+  'an',
+  'of',
+  'and',
+  'in',
+  'on',
+  'under',
+  'my',
+  'with',
+]);
+
+/** Every motif the art engine can draw. */
+const MOTIF_VOCABULARY = Object.freeze([
+  'star',
+  'planet',
+  'rocket',
+  'moon',
+  'dinosaur',
+  'fish',
+  'shell',
+  'wave',
+  'flower',
+  'tree',
+  'butterfly',
+  'cloud',
+  'sun',
+  'house',
+  'balloon',
+  'cat',
+  'dog',
+  'car',
+  'mountain',
+  'rainbow',
+  'bird',
+  'boat',
+  'robot',
+  'cupcake',
+  'snowflake',
+]);
+
+/** Used when a theme matches no keyword at all. */
+const FALLBACK_MOTIFS = Object.freeze([
+  'star',
+  'cloud',
+  'sun',
+  'flower',
+  'tree',
+  'butterfly',
+]);
+
+/**
+ * Keyword to motif list. Keys are singular and lowercase; plural forms are
+ * resolved by singularise() before lookup.
+ */
+const MOTIF_KEYWORDS = Object.freeze({
+  space: ['star', 'planet', 'rocket', 'moon'],
+  star: ['star'],
+  planet: ['planet'],
+  rocket: ['rocket'],
+  moon: ['moon'],
+  astronaut: ['rocket', 'star', 'planet'],
+  alien: ['planet', 'star'],
+  dinosaur: ['dinosaur'],
+  dino: ['dinosaur'],
+  trex: ['dinosaur'],
+  jurassic: ['dinosaur'],
+  sea: ['fish', 'shell', 'wave'],
+  ocean: ['fish', 'shell', 'wave'],
+  underwater: ['fish', 'shell', 'wave'],
+  fish: ['fish'],
+  shell: ['shell'],
+  wave: ['wave'],
+  beach: ['shell', 'wave', 'sun'],
+  garden: ['flower', 'tree', 'butterfly'],
+  flower: ['flower'],
+  tree: ['tree'],
+  butterfly: ['butterfly'],
+  fairy: ['flower', 'butterfly', 'star'],
+  jungle: ['tree', 'bird', 'butterfly'],
+  forest: ['tree', 'bird', 'mountain'],
+  safari: ['tree', 'sun', 'bird'],
+  sky: ['cloud', 'sun', 'star'],
+  cloud: ['cloud'],
+  sun: ['sun'],
+  sunny: ['sun'],
+  house: ['house'],
+  home: ['house'],
+  balloon: ['balloon'],
+  party: ['balloon', 'cupcake', 'star'],
+  cat: ['cat'],
+  kitten: ['cat'],
+  dog: ['dog'],
+  puppy: ['dog'],
+  pet: ['cat', 'dog'],
+  car: ['car'],
+  truck: ['car'],
+  mountain: ['mountain'],
+  rainbow: ['rainbow'],
+  bird: ['bird'],
+  boat: ['boat'],
+  ship: ['boat'],
+  robot: ['robot'],
+  cupcake: ['cupcake'],
+  cake: ['cupcake'],
+  snow: ['snowflake'],
+  snowflake: ['snowflake'],
+  winter: ['snowflake'],
+  farm: ['house', 'tree', 'cloud'],
+  city: ['house', 'car', 'star'],
+  night: ['moon', 'star', 'cloud'],
+  bug: ['butterfly', 'flower'],
+  insect: ['butterfly', 'flower'],
+});
+
+/**
+ * Trim, lowercase, and collapse internal whitespace.
+ *
+ * @param {string} theme
+ * @returns {string}
+ */
+function normaliseTheme(theme) {
+  if (typeof theme !== 'string') {
+    throw new TypeError(`normaliseTheme expects a string, received ${typeof theme}`);
+  }
+  return theme.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/**
+ * Candidate singular forms, most literal first. English plurals are irregular
+ * enough that guessing one form is unreliable, so callers get the ladder.
+ *
+ * @param {string} word
+ * @returns {string[]}
+ */
+function singularCandidates(word) {
+  if (typeof word !== 'string') {
+    throw new TypeError(`singularCandidates expects a string, received ${typeof word}`);
+  }
+  const out = [word];
+  if (word.length > 4 && word.endsWith('ies')) {
+    out.push(`${word.slice(0, -3)}y`);
+    return out;
+  }
+  if (word.length > 3 && word.endsWith('es')) {
+    out.push(word.slice(0, -2));
+  }
+  if (word.length > 3 && word.endsWith('s') && !word.endsWith('ss')) {
+    out.push(word.slice(0, -1));
+  }
+  return out;
+}
+
+/**
+ * Best singular guess: the first candidate the vocabulary knows, otherwise the
+ * most-stripped candidate. Vocabulary-aware, so 'houses' resolves to 'house'
+ * while 'fishes' resolves to 'fish'.
+ *
+ * @param {string} word
+ * @returns {string}
+ */
+function singularise(word) {
+  const candidates = singularCandidates(word);
+  for (const candidate of candidates) {
+    if (Object.hasOwn(MOTIF_KEYWORDS, candidate)) {
+      return candidate;
+    }
+  }
+  return candidates[candidates.length - 1];
+}
+
+/**
+ * Lowercase word tokens with stopwords removed, singularised, and deduplicated
+ * in first-seen order.
+ *
+ * @param {string} theme
+ * @returns {string[]}
+ */
+function tokeniseTheme(theme) {
+  const words = normaliseTheme(theme).split(/[^a-z0-9]+/).filter(Boolean);
+  const seen = new Set();
+  const tokens = [];
+  for (const word of words) {
+    if (STOPWORDS.includes(word)) {
+      continue;
+    }
+    const token = singularise(word);
+    if (seen.has(token)) {
+      continue;
+    }
+    seen.add(token);
+    tokens.push(token);
+  }
+  return tokens;
+}
+
+/**
+ * Resolve a theme to its motif list.
+ *
+ * @param {string} theme
+ * @returns {{ tokens: string[], motifs: string[], matched: boolean }}
+ */
+function motifsForTheme(theme) {
+  const tokens = tokeniseTheme(theme);
+  const seen = new Set();
+  const motifs = [];
+  for (const token of tokens) {
+    if (!Object.hasOwn(MOTIF_KEYWORDS, token)) {
+      continue;
+    }
+    for (const motif of MOTIF_KEYWORDS[token]) {
+      if (seen.has(motif)) {
+        continue;
+      }
+      seen.add(motif);
+      motifs.push(motif);
+    }
+  }
+  if (motifs.length === 0) {
+    return { tokens, motifs: [...FALLBACK_MOTIFS], matched: false };
+  }
+  return { tokens, motifs, matched: true };
+}
+
+/**
+ * Whether the art engine can draw this motif.
+ *
+ * @param {string} name
+ * @returns {boolean}
+ */
+function isKnownMotif(name) {
+  return MOTIF_VOCABULARY.includes(name);
+}
+
+  return { normaliseTheme, singularCandidates, singularise, tokeniseTheme, motifsForTheme, isKnownMotif, STOPWORDS, MOTIF_VOCABULARY, FALLBACK_MOTIFS, MOTIF_KEYWORDS };
+})();
+
+const __mod_src_motifs = (function () {
+/**
+ * Procedural motif library.
+ *
+ * Every motif is drawn as polylines inside a normalised 0..1 box (x right,
+ * y down), so the page composer can scale and place it without knowing what it
+ * is. This is the first half of the canonical intermediate representation the
+ * milestone review required: one geometry, consumed by both the SVG serialiser
+ * and the PDF emitter, with no second drawing path.
+ *
+ * A motif polyline is:
+ *   { points: [[x, y], ...], closed: boolean, fill: boolean, weight: number }
+ *
+ * `weight` is relative: 1 is a main outline, below 1 is interior detail. The
+ * composer turns it into an absolute stroke width in points and clamps it to
+ * the crayon-friendly floor.
+ *
+ * `closed` and `fill` are carried per polyline rather than inferred, because
+ * SVG can hide an overlap with a white fill while a stroke-only PDF cannot.
+ * The PDF emitter needs to know which shapes are filled to avoid "X-ray"
+ * intersections where motifs cross.
+ */
+
+/** Relative stroke weight for main outlines. */
+const MAIN_WEIGHT = 1;
+
+/** Relative stroke weight for interior detail. */
+const DETAIL_WEIGHT = 0.6;
+
+/**
+ * Build an open polyline.
+ *
+ * @param {Array<[number, number]>} points
+ * @param {{ closed?: boolean, fill?: boolean, weight?: number }} [options]
+ * @returns {{ points: Array<[number, number]>, closed: boolean, fill: boolean, weight: number }}
+ */
+function stroke(points, options = {}) {
+  return {
+    points,
+    closed: options.closed ?? false,
+    fill: options.fill ?? false,
+    weight: options.weight ?? MAIN_WEIGHT,
+  };
+}
+
+/**
+ * Build a closed polyline.
+ *
+ * @param {Array<[number, number]>} points
+ * @param {{ fill?: boolean, weight?: number }} [options]
+ */
+function polygon(points, options = {}) {
+  return stroke(points, { ...options, closed: true });
+}
+
+/**
+ * Circle as a closed polyline.
+ *
+ * @param {number} cx
+ * @param {number} cy
+ * @param {number} r
+ * @param {number} [segments]
+ * @param {{ fill?: boolean, weight?: number }} [options]
+ */
+function circle(cx, cy, r, segments = 24, options = {}) {
+  return polygon(ellipsePoints(cx, cy, r, r, segments), options);
+}
+
+/**
+ * Ellipse as a closed polyline.
+ *
+ * @param {number} cx
+ * @param {number} cy
+ * @param {number} rx
+ * @param {number} ry
+ * @param {number} [segments]
+ * @param {{ fill?: boolean, weight?: number }} [options]
+ */
+function ellipse(cx, cy, rx, ry, segments = 24, options = {}) {
+  return polygon(ellipsePoints(cx, cy, rx, ry, segments), options);
+}
+
+/**
+ * Circular arc as an open polyline. Angles are degrees, clockwise from +x.
+ *
+ * @param {number} cx
+ * @param {number} cy
+ * @param {number} r
+ * @param {number} startDeg
+ * @param {number} endDeg
+ * @param {number} [segments]
+ */
+function arc(cx, cy, r, startDeg, endDeg, segments = 16) {
+  const start = (startDeg * Math.PI) / 180;
+  const end = (endDeg * Math.PI) / 180;
+  const points = [];
+  for (let i = 0; i <= segments; i += 1) {
+    const angle = start + ((end - start) * i) / segments;
+    points.push([cx + Math.cos(angle) * r, cy + Math.sin(angle) * r]);
+  }
+  return stroke(points);
+}
+
+function ellipsePoints(cx, cy, rx, ry, segments) {
+  const points = [];
+  for (let i = 0; i < segments; i += 1) {
+    const angle = (i / segments) * Math.PI * 2;
+    points.push([cx + Math.cos(angle) * rx, cy + Math.sin(angle) * ry]);
+  }
+  return points;
+}
+
+/**
+ * Axis-aligned bounding box of a polyline set.
+ *
+ * @param {Array<{ points: Array<[number, number]> }>} polylines
+ * @returns {{ x: number, y: number, w: number, h: number }}
+ */
+function computeBounds(polylines) {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const line of polylines) {
+    for (const [x, y] of line.points) {
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (!Number.isFinite(minX)) {
+    return { x: 0, y: 0, w: 0, h: 0 };
+  }
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
+/**
+ * One generator per vocabulary motif. Each returns polylines in a 0..1 box.
+ * `rng` is used only for small, deterministic variation.
+ */
+const MOTIF_GENERATORS = {
+  star(rng) {
+    const points = [];
+    const rotation = -Math.PI / 2 + (rng() - 0.5) * 0.15;
+    for (let i = 0; i < 10; i += 1) {
+      const radius = i % 2 === 0 ? 0.48 : 0.2;
+      const angle = rotation + (i * Math.PI) / 5;
+      points.push([0.5 + Math.cos(angle) * radius, 0.5 + Math.sin(angle) * radius]);
+    }
+    return [polygon(points)];
+  },
+
+  planet(rng) {
+    return [
+      circle(0.5, 0.5, 0.3),
+      ellipse(0.5, 0.5, 0.48, 0.13, 28),
+      circle(0.4, 0.42, 0.06, 12),
+      circle(0.6, 0.58, 0.045, 12),
+      stroke([[0.3, 0.62], [0.42, 0.66]], { weight: DETAIL_WEIGHT }),
+    ];
+  },
+
+  rocket(rng) {
+    return [
+      polygon([[0.5, 0.02], [0.68, 0.3], [0.68, 0.72], [0.32, 0.72], [0.32, 0.3]]),
+      polygon([[0.32, 0.5], [0.14, 0.78], [0.32, 0.72]]),
+      polygon([[0.68, 0.5], [0.86, 0.78], [0.68, 0.72]]),
+      circle(0.5, 0.36, 0.09, 16, { fill: true }),
+      stroke([[0.42, 0.78], [0.5, 0.94], [0.58, 0.78]]),
+      stroke([[0.4, 0.86], [0.5, 0.99], [0.6, 0.86]], { weight: DETAIL_WEIGHT }),
+    ];
+  },
+
+  moon(rng) {
+    return [
+      circle(0.5, 0.5, 0.4),
+      circle(0.38, 0.4, 0.08, 14),
+      circle(0.6, 0.56, 0.06, 14),
+      circle(0.45, 0.66, 0.05, 14),
+    ];
+  },
+
+  dinosaur(rng) {
+    return [
+      ellipse(0.45, 0.6, 0.28, 0.18, 20),
+      stroke([[0.62, 0.5], [0.72, 0.3], [0.78, 0.22]]),
+      ellipse(0.83, 0.2, 0.1, 0.08, 16),
+      stroke([[0.2, 0.62], [0.06, 0.5], [0.02, 0.42]]),
+      stroke([[0.35, 0.76], [0.33, 0.93]]),
+      stroke([[0.55, 0.76], [0.57, 0.93]]),
+      stroke([[0.3, 0.44], [0.34, 0.36], [0.38, 0.44]], { weight: DETAIL_WEIGHT }),
+      stroke([[0.42, 0.42], [0.46, 0.34], [0.5, 0.42]], { weight: DETAIL_WEIGHT }),
+      circle(0.86, 0.18, 0.015, 8),
+    ];
+  },
+
+  fish(rng) {
+    return [
+      ellipse(0.45, 0.5, 0.3, 0.2, 22),
+      polygon([[0.75, 0.5], [0.96, 0.32], [0.96, 0.68]]),
+      circle(0.3, 0.44, 0.03, 10),
+      stroke([[0.45, 0.3], [0.5, 0.18], [0.58, 0.3]], { weight: DETAIL_WEIGHT }),
+      stroke([[0.4, 0.5], [0.55, 0.5]], { weight: DETAIL_WEIGHT }),
+    ];
+  },
+
+  shell(rng) {
+    const lines = [arc(0.5, 0.85, 0.42, 200, 340, 24)];
+    for (let i = 0; i <= 6; i += 1) {
+      const angle = 200 + (140 * i) / 6;
+      const rad = (angle * Math.PI) / 180;
+      lines.push(
+        stroke([
+          [0.5, 0.85],
+          [0.5 + Math.cos(rad) * 0.42, 0.85 + Math.sin(rad) * 0.42],
+        ], { weight: DETAIL_WEIGHT }),
+      );
+    }
+    return lines;
+  },
+
+  wave(rng) {
+    const lines = [];
+    for (let row = 0; row < 3; row += 1) {
+      const y = 0.3 + row * 0.22;
+      const points = [];
+      for (let i = 0; i <= 24; i += 1) {
+        const x = i / 24;
+        points.push([x, y + Math.sin(x * Math.PI * 4) * 0.06]);
+      }
+      lines.push(stroke(points));
+    }
+    return lines;
+  },
+
+  flower(rng) {
+    const lines = [stroke([[0.5, 0.55], [0.5, 0.98]])];
+    for (let i = 0; i < 6; i += 1) {
+      const angle = (i / 6) * Math.PI * 2;
+      lines.push(
+        ellipse(0.5 + Math.cos(angle) * 0.18, 0.35 + Math.sin(angle) * 0.18, 0.12, 0.12, 16),
+      );
+    }
+    lines.push(circle(0.5, 0.35, 0.08, 14));
+    lines.push(stroke([[0.5, 0.72], [0.68, 0.64], [0.72, 0.76], [0.5, 0.8]], { weight: DETAIL_WEIGHT }));
+    return lines;
+  },
+
+  tree(rng) {
+    return [
+      stroke([[0.44, 0.98], [0.44, 0.6]]),
+      stroke([[0.56, 0.98], [0.56, 0.6]]),
+      arc(0.5, 0.42, 0.34, 180, 360, 20),
+      arc(0.32, 0.5, 0.18, 90, 270, 16),
+      arc(0.68, 0.5, 0.18, 270, 450, 16),
+      stroke([[0.32, 0.6], [0.68, 0.6]]),
+    ];
+  },
+
+  butterfly(rng) {
+    return [
+      ellipse(0.5, 0.5, 0.05, 0.26, 14),
+      ellipse(0.3, 0.36, 0.2, 0.16, 18),
+      ellipse(0.7, 0.36, 0.2, 0.16, 18),
+      ellipse(0.34, 0.66, 0.15, 0.13, 18),
+      ellipse(0.66, 0.66, 0.15, 0.13, 18),
+      stroke([[0.5, 0.26], [0.42, 0.1]], { weight: DETAIL_WEIGHT }),
+      stroke([[0.5, 0.26], [0.58, 0.1]], { weight: DETAIL_WEIGHT }),
+      circle(0.42, 0.08, 0.02, 8),
+      circle(0.58, 0.08, 0.02, 8),
+    ];
+  },
+
+  cloud(rng) {
+    return [
+      arc(0.32, 0.55, 0.18, 180, 360, 16),
+      arc(0.5, 0.45, 0.24, 180, 360, 18),
+      arc(0.7, 0.55, 0.18, 180, 360, 16),
+      stroke([[0.14, 0.55], [0.88, 0.55]]),
+    ];
+  },
+
+  sun(rng) {
+    const lines = [circle(0.5, 0.5, 0.26, 22)];
+    for (let i = 0; i < 8; i += 1) {
+      const angle = (i / 8) * Math.PI * 2;
+      lines.push(
+        stroke([
+          [0.5 + Math.cos(angle) * 0.34, 0.5 + Math.sin(angle) * 0.34],
+          [0.5 + Math.cos(angle) * 0.48, 0.5 + Math.sin(angle) * 0.48],
+        ]),
+      );
+    }
+    return lines;
+  },
+
+  house(rng) {
+    return [
+      polygon([[0.16, 0.5], [0.16, 0.94], [0.84, 0.94], [0.84, 0.5]]),
+      polygon([[0.08, 0.52], [0.5, 0.12], [0.92, 0.52]], { fill: true }),
+      polygon([[0.42, 0.94], [0.42, 0.68], [0.58, 0.68], [0.58, 0.94]], { fill: true }),
+      polygon([[0.22, 0.6], [0.34, 0.6], [0.34, 0.72], [0.22, 0.72]]),
+      stroke([[0.66, 0.62], [0.78, 0.62]], { weight: DETAIL_WEIGHT }),
+      stroke([[0.66, 0.7], [0.78, 0.7]], { weight: DETAIL_WEIGHT }),
+    ];
+  },
+
+  balloon(rng) {
+    return [
+      ellipse(0.5, 0.36, 0.26, 0.32, 22),
+      polygon([[0.44, 0.68], [0.56, 0.68], [0.5, 0.76]]),
+      stroke([[0.5, 0.76], [0.46, 0.88], [0.54, 0.98]]),
+      stroke([[0.38, 0.24], [0.44, 0.16]], { weight: DETAIL_WEIGHT }),
+    ];
+  },
+
+  cat(rng) {
+    return [
+      circle(0.5, 0.55, 0.3, 22),
+      polygon([[0.26, 0.36], [0.24, 0.1], [0.46, 0.28]]),
+      polygon([[0.74, 0.36], [0.76, 0.1], [0.54, 0.28]]),
+      circle(0.4, 0.5, 0.035, 10),
+      circle(0.6, 0.5, 0.035, 10),
+      polygon([[0.46, 0.62], [0.54, 0.62], [0.5, 0.68]]),
+      stroke([[0.5, 0.68], [0.5, 0.74]], { weight: DETAIL_WEIGHT }),
+      stroke([[0.3, 0.62], [0.12, 0.58]], { weight: DETAIL_WEIGHT }),
+      stroke([[0.3, 0.68], [0.12, 0.7]], { weight: DETAIL_WEIGHT }),
+      stroke([[0.7, 0.62], [0.88, 0.58]], { weight: DETAIL_WEIGHT }),
+      stroke([[0.7, 0.68], [0.88, 0.7]], { weight: DETAIL_WEIGHT }),
+    ];
+  },
+
+  dog(rng) {
+    return [
+      circle(0.5, 0.52, 0.3, 22),
+      ellipse(0.24, 0.5, 0.1, 0.22, 16),
+      ellipse(0.76, 0.5, 0.1, 0.22, 16),
+      circle(0.4, 0.46, 0.035, 10),
+      circle(0.6, 0.46, 0.035, 10),
+      ellipse(0.5, 0.66, 0.12, 0.09, 16),
+      circle(0.5, 0.62, 0.04, 10),
+      stroke([[0.5, 0.66], [0.5, 0.72]], { weight: DETAIL_WEIGHT }),
+      stroke([[0.44, 0.74], [0.5, 0.78], [0.56, 0.74]], { weight: DETAIL_WEIGHT }),
+    ];
+  },
+
+  car(rng) {
+    return [
+      polygon([[0.06, 0.66], [0.06, 0.5], [0.24, 0.5], [0.34, 0.3], [0.66, 0.3], [0.76, 0.5], [0.94, 0.5], [0.94, 0.66]]),
+      circle(0.28, 0.68, 0.1, 16, { fill: true }),
+      circle(0.72, 0.68, 0.1, 16, { fill: true }),
+      stroke([[0.38, 0.34], [0.38, 0.48]], { weight: DETAIL_WEIGHT }),
+      stroke([[0.62, 0.34], [0.62, 0.48]], { weight: DETAIL_WEIGHT }),
+      stroke([[0.06, 0.56], [0.94, 0.56]], { weight: DETAIL_WEIGHT }),
+    ];
+  },
+
+  mountain(rng) {
+    return [
+      polygon([[0.02, 0.92], [0.34, 0.24], [0.66, 0.92]]),
+      polygon([[0.42, 0.92], [0.7, 0.4], [0.98, 0.92]]),
+      stroke([[0.24, 0.46], [0.34, 0.36], [0.44, 0.46]], { weight: DETAIL_WEIGHT }),
+      stroke([[0.62, 0.58], [0.7, 0.5], [0.78, 0.58]], { weight: DETAIL_WEIGHT }),
+    ];
+  },
+
+  rainbow(rng) {
+    const lines = [];
+    for (let i = 0; i < 4; i += 1) {
+      lines.push(arc(0.5, 0.86, 0.44 - i * 0.09, 180, 360, 24));
+    }
+    return lines;
+  },
+
+  bird(rng) {
+    return [
+      ellipse(0.46, 0.52, 0.26, 0.18, 20),
+      circle(0.74, 0.38, 0.12, 16),
+      polygon([[0.86, 0.38], [0.98, 0.44], [0.86, 0.48]]),
+      circle(0.78, 0.34, 0.025, 8),
+      stroke([[0.4, 0.44], [0.3, 0.26], [0.52, 0.36]], { weight: DETAIL_WEIGHT }),
+      polygon([[0.24, 0.56], [0.04, 0.46], [0.06, 0.62]]),
+      stroke([[0.44, 0.68], [0.42, 0.82]], { weight: DETAIL_WEIGHT }),
+      stroke([[0.54, 0.68], [0.56, 0.82]], { weight: DETAIL_WEIGHT }),
+    ];
+  },
+
+  boat(rng) {
+    return [
+      polygon([[0.08, 0.66], [0.92, 0.66], [0.78, 0.86], [0.22, 0.86]]),
+      stroke([[0.5, 0.66], [0.5, 0.1]]),
+      polygon([[0.54, 0.14], [0.54, 0.6], [0.86, 0.6]]),
+      polygon([[0.46, 0.2], [0.46, 0.6], [0.2, 0.6]]),
+      stroke([[0.02, 0.92], [0.98, 0.92]], { weight: DETAIL_WEIGHT }),
+    ];
+  },
+
+  robot(rng) {
+    return [
+      polygon([[0.3, 0.16], [0.7, 0.16], [0.7, 0.42], [0.3, 0.42]]),
+      circle(0.4, 0.28, 0.04, 10),
+      circle(0.6, 0.28, 0.04, 10),
+      stroke([[0.42, 0.36], [0.58, 0.36]], { weight: DETAIL_WEIGHT }),
+      stroke([[0.5, 0.16], [0.5, 0.06]]),
+      circle(0.5, 0.04, 0.03, 8),
+      polygon([[0.34, 0.46], [0.66, 0.46], [0.66, 0.78], [0.34, 0.78]]),
+      stroke([[0.34, 0.54], [0.16, 0.62]]),
+      stroke([[0.66, 0.54], [0.84, 0.62]]),
+      stroke([[0.42, 0.78], [0.42, 0.94]]),
+      stroke([[0.58, 0.78], [0.58, 0.94]]),
+    ];
+  },
+
+  cupcake(rng) {
+    const lines = [
+      polygon([[0.24, 0.5], [0.76, 0.5], [0.68, 0.94], [0.32, 0.94]]),
+      arc(0.5, 0.5, 0.26, 180, 360, 18),
+      arc(0.36, 0.42, 0.14, 180, 360, 14),
+      arc(0.64, 0.42, 0.14, 180, 360, 14),
+      circle(0.5, 0.16, 0.07, 12),
+    ];
+    for (let i = 1; i < 4; i += 1) {
+      const x = 0.24 + (0.52 * i) / 4;
+      lines.push(stroke([[x, 0.54], [x + 0.02, 0.9]], { weight: DETAIL_WEIGHT }));
+    }
+    return lines;
+  },
+
+  snowflake(rng) {
+    const lines = [];
+    for (let i = 0; i < 6; i += 1) {
+      const angle = (i / 6) * Math.PI * 2;
+      const dx = Math.cos(angle);
+      const dy = Math.sin(angle);
+      lines.push(stroke([[0.5, 0.5], [0.5 + dx * 0.46, 0.5 + dy * 0.46]]));
+      for (const t of [0.24, 0.36]) {
+        const bx = 0.5 + dx * t;
+        const by = 0.5 + dy * t;
+        const spread = 0.1;
+        lines.push(
+          stroke([
+            [bx + Math.cos(angle + 0.9) * spread, by + Math.sin(angle + 0.9) * spread],
+            [bx, by],
+            [bx + Math.cos(angle - 0.9) * spread, by + Math.sin(angle - 0.9) * spread],
+          ], { weight: DETAIL_WEIGHT }),
+        );
+      }
+    }
+    return lines;
+  },
+};
+
+/** Every motif this module can draw, in vocabulary order. */
+const MOTIF_NAMES = Object.freeze(Object.keys(MOTIF_GENERATORS));
+
+/**
+ * Draw one motif.
+ *
+ * @param {string} name
+ * @param {() => number} rng
+ * @returns {{ name: string, polylines: Array<object>, bounds: { x: number, y: number, w: number, h: number } }}
+ */
+function drawMotif(name, rng) {
+  if (!Object.hasOwn(MOTIF_GENERATORS, name)) {
+    throw new Error(`unknown motif: ${name}`);
+  }
+  const polylines = MOTIF_GENERATORS[name](rng);
+  return { name, polylines, bounds: computeBounds(polylines) };
+}
+
+  return { stroke, polygon, circle, ellipse, arc, computeBounds, drawMotif, MAIN_WEIGHT, DETAIL_WEIGHT, MOTIF_NAMES };
+})();
+
+const __mod_src_lettering = (function () {
+/**
+ * Single-stroke vector lettering.
+ *
+ * Glyphs live in an em box: x runs 0..advance, y runs 0 (cap top) to 1
+ * (baseline). Descenders and accents may fall outside that range. Scaling by
+ * `size` therefore makes `size` the cap height in points, which is what the
+ * cover needs to guarantee.
+ *
+ * Accented letters are handled by NFD decomposition: the base letter is drawn
+ * and the combining mark becomes an accent stroke above the cap line. That is
+ * why `Zoë` and `José` render instead of throwing — `validateInputs` accepts
+ * them, so the lettering has to as well.
+ *
+ * Output polylines use the same shape as the motif library, so the page
+ * composer treats text and art identically.
+ */
+
+const ACCENT_ABOVE = -0.12;
+
+/** Combining marks that have a stroke definition. */
+const ACCENTS = {
+  '\u0301': [[[0.32, ACCENT_ABOVE], [0.62, -0.34]]], // acute
+  '\u0300': [[[0.32, -0.34], [0.62, ACCENT_ABOVE]]], // grave
+  '\u0302': [[[0.28, ACCENT_ABOVE], [0.5, -0.34], [0.72, ACCENT_ABOVE]]], // circumflex
+  '\u0303': [[[0.28, -0.2], [0.4, -0.3], [0.6, -0.2], [0.72, -0.3]]], // tilde
+  '\u0308': [circlePoints(0.34, -0.24, 0.05), circlePoints(0.66, -0.24, 0.05)], // diaeresis
+  '\u030a': [circlePoints(0.5, -0.24, 0.1)], // ring
+  '\u030c': [[[0.28, -0.34], [0.5, ACCENT_ABOVE], [0.72, -0.34]]], // caron
+  '\u0327': [[[0.5, 1.0], [0.5, 1.14], [0.36, 1.2]]], // cedilla
+};
+
+function circlePoints(cx, cy, r, segments = 12) {
+  const points = [];
+  for (let i = 0; i < segments; i += 1) {
+    const angle = (i / segments) * Math.PI * 2;
+    points.push([cx + Math.cos(angle) * r, cy + Math.sin(angle) * r]);
+  }
+  points.push(points[0]);
+  return points;
+}
+
+function arcPoints(cx, cy, r, startDeg, endDeg, segments = 14) {
+  const start = (startDeg * Math.PI) / 180;
+  const end = (endDeg * Math.PI) / 180;
+  const points = [];
+  for (let i = 0; i <= segments; i += 1) {
+    const angle = start + ((end - start) * i) / segments;
+    points.push([cx + Math.cos(angle) * r, cy + Math.sin(angle) * r]);
+  }
+  return points;
+}
+
+function ellipsePoints(cx, cy, rx, ry, segments = 20) {
+  const points = [];
+  for (let i = 0; i < segments; i += 1) {
+    const angle = (i / segments) * Math.PI * 2;
+    points.push([cx + Math.cos(angle) * rx, cy + Math.sin(angle) * ry]);
+  }
+  points.push(points[0]);
+  return points;
+}
+
+/**
+ * Uppercase alphabet, digits, and the three punctuation marks the name
+ * validator allows. `w` is the advance width in em units.
+ */
+const GLYPHS = {
+  A: { w: 1, s: [[[0, 1], [0.5, 0], [1, 1]], [[0.18, 0.62], [0.82, 0.62]]] },
+  B: {
+    w: 1,
+    s: [
+      [[0, 0], [0, 1]],
+      [[0, 0], [0.66, 0], [0.84, 0.14], [0.84, 0.36], [0.66, 0.5], [0, 0.5]],
+      [[0, 0.5], [0.7, 0.5], [0.88, 0.64], [0.88, 0.86], [0.7, 1], [0, 1]],
+    ],
+  },
+  C: { w: 1, s: [arcPoints(0.5, 0.5, 0.5, 40, 320, 16)] },
+  D: { w: 1, s: [[[0, 0], [0, 1]], arcPoints(0.5, 0.5, 0.5, -90, 90, 12)] },
+  E: { w: 1, s: [[[0, 0], [0, 1]], [[0, 0], [0.78, 0]], [[0, 0.5], [0.68, 0.5]], [[0, 1], [0.78, 1]]] },
+  F: { w: 1, s: [[[0, 0], [0, 1]], [[0, 0], [0.78, 0]], [[0, 0.5], [0.68, 0.5]]] },
+  G: {
+    w: 1,
+    s: [
+      arcPoints(0.5, 0.5, 0.5, 40, 320, 16),
+      [[0.62, 0.5], [1, 0.5]],
+      [[1, 0.5], [1, 0.78]],
+    ],
+  },
+  H: { w: 1, s: [[[0, 0], [0, 1]], [[1, 0], [1, 1]], [[0, 0.5], [1, 0.5]]] },
+  I: { w: 0.7, s: [[[0.35, 0], [0.35, 1]], [[0.1, 0], [0.6, 0]], [[0.1, 1], [0.6, 1]]] },
+  J: { w: 1, s: [[[0.75, 0], [0.75, 0.78]], arcPoints(0.45, 0.78, 0.3, 0, 180, 10)] },
+  K: { w: 1, s: [[[0, 0], [0, 1]], [[0.9, 0], [0, 0.55]], [[0.3, 0.42], [0.95, 1]]] },
+  L: { w: 1, s: [[[0, 0], [0, 1]], [[0, 1], [0.8, 1]]] },
+  M: { w: 1, s: [[[0, 1], [0, 0], [0.5, 0.62], [1, 0], [1, 1]]] },
+  N: { w: 1, s: [[[0, 1], [0, 0], [1, 1], [1, 0]]] },
+  O: { w: 1, s: [ellipsePoints(0.5, 0.5, 0.5, 0.5, 20)] },
+  P: {
+    w: 1,
+    s: [
+      [[0, 0], [0, 1]],
+      [[0, 0], [0.68, 0], [0.86, 0.16], [0.86, 0.38], [0.68, 0.54], [0, 0.54]],
+    ],
+  },
+  Q: { w: 1, s: [ellipsePoints(0.5, 0.5, 0.5, 0.5, 20), [[0.62, 0.66], [1, 1.05]]] },
+  R: {
+    w: 1,
+    s: [
+      [[0, 0], [0, 1]],
+      [[0, 0], [0.68, 0], [0.86, 0.16], [0.86, 0.38], [0.68, 0.54], [0, 0.54]],
+      [[0.5, 0.54], [0.95, 1]],
+    ],
+  },
+  S: {
+    w: 1,
+    s: [
+      [
+        [0.85, 0.14], [0.68, 0], [0.3, 0], [0.14, 0.16], [0.14, 0.34],
+        [0.3, 0.48], [0.7, 0.54], [0.86, 0.68], [0.86, 0.86], [0.7, 1],
+        [0.3, 1], [0.14, 0.86],
+      ],
+    ],
+  },
+  T: { w: 1, s: [[[0, 0], [1, 0]], [[0.5, 0], [0.5, 1]]] },
+  U: { w: 1, s: [[[0, 0], [0, 0.78], [0.16, 1], [0.84, 1], [1, 0.78], [1, 0]]] },
+  V: { w: 1, s: [[[0, 0], [0.5, 1], [1, 0]]] },
+  W: { w: 1, s: [[[0, 0], [0.22, 1], [0.5, 0.42], [0.78, 1], [1, 0]]] },
+  X: { w: 1, s: [[[0, 0], [1, 1]], [[1, 0], [0, 1]]] },
+  Y: { w: 1, s: [[[0, 0], [0.5, 0.5], [1, 0]], [[0.5, 0.5], [0.5, 1]]] },
+  Z: { w: 1, s: [[[0, 0], [1, 0]], [[1, 0], [0, 1]], [[0, 1], [1, 1]]] },
+
+  0: { w: 1, s: [ellipsePoints(0.5, 0.5, 0.44, 0.5, 20)] },
+  1: { w: 1, s: [[[0.2, 0.2], [0.5, 0], [0.5, 1]], [[0.2, 1], [0.8, 1]]] },
+  2: {
+    w: 1,
+    s: [[[0.14, 0.2], [0.3, 0.02], [0.7, 0.02], [0.86, 0.2], [0.86, 0.36], [0.14, 1], [0.86, 1]]],
+  },
+  3: {
+    w: 1,
+    s: [
+      [[0.14, 0.12], [0.3, 0], [0.7, 0], [0.86, 0.16], [0.86, 0.34], [0.7, 0.48], [0.4, 0.48]],
+      [[0.7, 0.48], [0.86, 0.62], [0.86, 0.84], [0.7, 1], [0.3, 1], [0.14, 0.88]],
+    ],
+  },
+  4: { w: 1, s: [[[0.7, 0], [0.1, 0.68], [1, 0.68]], [[0.7, 0], [0.7, 1]]] },
+  5: {
+    w: 1,
+    s: [[
+      [0.86, 0], [0.2, 0], [0.16, 0.44], [0.3, 0.38], [0.7, 0.38],
+      [0.86, 0.54], [0.86, 0.82], [0.7, 1], [0.3, 1], [0.14, 0.88],
+    ]],
+  },
+  6: {
+    w: 1,
+    s: [[
+      [0.8, 0.06], [0.6, 0], [0.34, 0.04], [0.16, 0.24], [0.14, 0.6],
+      [0.2, 0.86], [0.36, 1], [0.64, 1], [0.84, 0.84], [0.84, 0.62],
+      [0.66, 0.48], [0.36, 0.48], [0.18, 0.62],
+    ]],
+  },
+  7: { w: 1, s: [[[0.14, 0], [0.86, 0], [0.86, 0.16], [0.44, 1]]] },
+  8: { w: 1, s: [ellipsePoints(0.5, 0.26, 0.34, 0.26, 16), ellipsePoints(0.5, 0.74, 0.4, 0.26, 16)] },
+  9: {
+    w: 1,
+    s: [[
+      [0.2, 0.94], [0.4, 1], [0.66, 0.96], [0.84, 0.76], [0.86, 0.4],
+      [0.8, 0.14], [0.64, 0], [0.36, 0], [0.16, 0.16], [0.16, 0.38],
+      [0.34, 0.52], [0.64, 0.52], [0.82, 0.38],
+    ]],
+  },
+
+  ' ': { w: 0.5, s: [] },
+  '-': { w: 0.8, s: [[[0.1, 0.5], [0.7, 0.5]]] },
+  "'": { w: 0.4, s: [[[0.2, 0], [0.2, 0.22]]] },
+};
+
+/** Default letter spacing, in em units. */
+const DEFAULT_LETTER_SPACING = 0.06;
+
+function resolveGlyph(char) {
+  const direct = GLYPHS[char];
+  if (direct) {
+    return direct;
+  }
+  const decomposed = [...char.normalize('NFD')];
+  if (decomposed.length > 1) {
+    const base = GLYPHS[decomposed[0]];
+    if (base) {
+      const accentStrokes = [];
+      for (const mark of decomposed.slice(1)) {
+        const accent = ACCENTS[mark];
+        if (!accent) {
+          throw new Error(`unsupported character: ${JSON.stringify(char)}`);
+        }
+        accentStrokes.push(...accent);
+      }
+      return { w: base.w, s: [...base.s, ...accentStrokes] };
+    }
+  }
+  throw new Error(`unsupported character: ${JSON.stringify(char)}`);
+}
+
+/**
+ * Whether this module can draw the character.
+ *
+ * @param {string} char
+ * @returns {boolean}
+ */
+function hasGlyph(char) {
+  try {
+    resolveGlyph(char);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Width of a string in points.
+ *
+ * @param {string} text
+ * @param {{ size?: number, letterSpacing?: number }} [options]
+ * @returns {number}
+ */
+function measureText(text, options = {}) {
+  const size = options.size ?? 1;
+  const letterSpacing = options.letterSpacing ?? DEFAULT_LETTER_SPACING;
+  const chars = [...String(text).normalize('NFC')];
+  let width = 0;
+  for (let i = 0; i < chars.length; i += 1) {
+    width += resolveGlyph(chars[i]).w;
+    if (i < chars.length - 1) {
+      width += letterSpacing;
+    }
+  }
+  return width * size;
+}
+
+/**
+ * Lay a string out as polylines in page coordinates.
+ *
+ * @param {string} text
+ * @param {{ x?: number, y?: number, size?: number, letterSpacing?: number, weight?: number }} [options]
+ * @returns {Array<{ points: Array<[number, number]>, closed: boolean, fill: boolean, weight: number }>}
+ */
+function layoutText(text, options = {}) {
+  const x = options.x ?? 0;
+  const y = options.y ?? 0;
+  const size = options.size ?? 100;
+  const letterSpacing = options.letterSpacing ?? DEFAULT_LETTER_SPACING;
+  const weight = options.weight ?? 1;
+
+  const polylines = [];
+  let cursor = 0;
+  for (const char of String(text).normalize('NFC')) {
+    const glyph = resolveGlyph(char);
+    for (const strokePoints of glyph.s) {
+      polylines.push({
+        points: strokePoints.map(([gx, gy]) => [x + (cursor + gx) * size, y + gy * size]),
+        closed: false,
+        fill: false,
+        weight,
+      });
+    }
+    cursor += glyph.w + letterSpacing;
+  }
+  return polylines;
+}
+
+/**
+ * Largest size at or below `maxSize` that fits `maxWidth`, never below
+ * `minSize`. A caller that gets `minSize` back must wrap the text itself.
+ *
+ * @param {string} text
+ * @param {{ maxWidth: number, maxSize?: number, minSize?: number, letterSpacing?: number }} options
+ * @returns {number}
+ */
+function fitText(text, options) {
+  const maxWidth = options.maxWidth;
+  const maxSize = options.maxSize ?? 120;
+  const minSize = options.minSize ?? 60;
+  const letterSpacing = options.letterSpacing ?? DEFAULT_LETTER_SPACING;
+  const emWidth = measureText(text, { size: 1, letterSpacing });
+  if (emWidth <= 0) {
+    return maxSize;
+  }
+  const fitted = Math.floor(maxWidth / emWidth);
+  return Math.max(minSize, Math.min(maxSize, fitted));
+}
+
+  return { hasGlyph, measureText, layoutText, fitText, DEFAULT_LETTER_SPACING };
+})();
+
+const __mod_src_page = (function () {
+/**
+ * Interior page composition and SVG serialisation.
+ *
+ * One canonical polyline IR serves both renderers: every line is a list of
+ * `[x, y]` points in top-down A4 user units (595.28 x 841.89 pt, y increasing
+ * downwards), plus `closed`, `fill`, and `width` in points. The SVG writer
+ * consumes it here; the PDF writer will consume the same array in Phase 3 and
+ * is the only place that flips Y.
+ *
+ * `fill` matters more than it looks. The SVG preview can hide an overlap by
+ * painting a shape white, but a stroke-only PDF cannot: two motifs crossing
+ * would show their interior lines. Carrying `fill` through the IR lets the PDF
+ * emit `B` (fill and stroke) where the SVG emitted `fill="#ffffff"`, so the
+ * preview and the print stay honest about each other.
+ */
+
+const { DETAIL_WEIGHT, MAIN_WEIGHT, MOTIF_NAMES, drawMotif } = __mod_src_motifs;
+const { deriveSeed, hashString, makeRng, pick, pickDistinct, randInt, shuffle } = __mod_src_rng;
+const { motifsForTheme, normaliseTheme } = __mod_src_themes;
+
+/** A4 width in PostScript points. */
+const PAGE_WIDTH = 595.28;
+
+/** A4 height in PostScript points. */
+const PAGE_HEIGHT = 841.89;
+
+/** Outer decorative border inset. */
+const FRAME_INSET = 24;
+
+/** Inner decorative border inset. */
+const INNER_FRAME_INSET = 32;
+
+/** Baseline of the ground line, low enough to leave room for the motif grid. */
+const GROUND_Y = Math.round(PAGE_HEIGHT * 0.72);
+
+/** Fewest motifs an interior page may carry. */
+const MIN_PAGE_MOTIFS = 3;
+
+/** Most motifs an interior page may carry. */
+const MAX_PAGE_MOTIFS = 7;
+
+/** Stroke width, in points, for a relative weight of 1. */
+const STROKE_BASE = 5.5;
+
+/** Thinnest stroke the composer will emit, in points. Crayon-friendly floor. */
+const STROKE_FLOOR = 4;
+
+const FRAME_STROKE = 4;
+const INNER_FRAME_STROKE = 1.5;
+const GROUND_STROKE = 3;
+
+/**
+ * Convert a relative motif weight to an absolute stroke width in points.
+ *
+ * @param {number} weight
+ * @returns {number}
+ */
+function strokeWidthFor(weight) {
+  return Math.max(STROKE_FLOOR, weight * STROKE_BASE);
+}
+
+/**
+ * Normalise any polyline set into the page IR, resolving `weight` to `width`.
+ *
+ * @param {Array<{ points: Array<[number, number]>, closed?: boolean, fill?: boolean, weight?: number, width?: number }>} polylines
+ * @returns {Array<{ points: Array<[number, number]>, closed: boolean, fill: boolean, width: number }>}
+ */
+function toPagePolylines(polylines) {
+  return polylines.map((line) => ({
+    points: line.points,
+    closed: line.closed ?? false,
+    fill: line.fill ?? false,
+    width: line.width ?? strokeWidthFor(line.weight ?? MAIN_WEIGHT),
+  }));
+}
+
+function rect(x, y, w, h, width) {
+  return {
+    points: [[x, y], [x + w, y], [x + w, y + h], [x, y + h]],
+    closed: true,
+    fill: false,
+    width,
+  };
+}
+
+function selectMotifs(theme, rng) {
+  const { motifs } = motifsForTheme(theme);
+  const drawable = motifs.filter((name) => MOTIF_NAMES.includes(name));
+  const pool = drawable.length > 0 ? drawable : MOTIF_NAMES;
+  const count = randInt(rng, MIN_PAGE_MOTIFS, MAX_PAGE_MOTIFS);
+  const chosen = [pick(rng, pool)];
+  const rest = MOTIF_NAMES.filter((name) => !chosen.includes(name));
+  chosen.push(...pickDistinct(rng, rest, count - 1));
+  return shuffle(rng, chosen);
+}
+
+/**
+ * Compose one interior page.
+ *
+ * Motifs sit on a jittered grid. Each is scaled to 0.8 of its cell and its
+ * centre moves by at most 0.1 of a cell, so the worst-case bounding box is
+ * exactly the cell: neighbours can touch but never overlap.
+ *
+ * @param {string} theme
+ * @param {string} name
+ * @param {number} index zero-based page index
+ * @param {{ motifs?: string[] }} [options] explicit motif names, bypassing selection
+ * @returns {{
+ *   index: number,
+ *   seed: number,
+ *   motifs: string[],
+ *   placements: Array<{ name: string, bounds: { x: number, y: number, w: number, h: number } }>,
+ *   polylines: Array<object>,
+ *   width: number,
+ *   height: number,
+ * }}
+ */
+function composePage(theme, name, index, options = {}) {
+  const seed = deriveSeed(
+    hashString(`${normaliseTheme(theme)}\u0000${String(name).trim().toLowerCase()}`),
+    index,
+  );
+  const rng = makeRng(seed);
+  const motifs = options.motifs ? [...options.motifs] : selectMotifs(theme, rng);
+
+  const polylines = [
+    rect(FRAME_INSET, FRAME_INSET, PAGE_WIDTH - 2 * FRAME_INSET, PAGE_HEIGHT - 2 * FRAME_INSET, FRAME_STROKE),
+    rect(
+      INNER_FRAME_INSET,
+      INNER_FRAME_INSET,
+      PAGE_WIDTH - 2 * INNER_FRAME_INSET,
+      PAGE_HEIGHT - 2 * INNER_FRAME_INSET,
+      INNER_FRAME_STROKE,
+    ),
+  ];
+
+  const contentLeft = INNER_FRAME_INSET + 8;
+  const contentRight = PAGE_WIDTH - INNER_FRAME_INSET - 8;
+  const contentTop = INNER_FRAME_INSET + 24;
+  const contentBottom = GROUND_Y - 16;
+  const contentW = contentRight - contentLeft;
+  const contentH = contentBottom - contentTop;
+
+  polylines.push({
+    points: [[contentLeft, GROUND_Y], [contentRight, GROUND_Y]],
+    closed: false,
+    fill: false,
+    width: GROUND_STROKE,
+  });
+
+  const tufts = 5;
+  for (let i = 0; i < tufts; i += 1) {
+    const tx = contentLeft + ((i + 0.5) / tufts) * contentW + (rng() - 0.5) * 12;
+    polylines.push({
+      points: [[tx - 6, GROUND_Y + 10], [tx, GROUND_Y + 2], [tx + 6, GROUND_Y + 10]],
+      closed: false,
+      fill: false,
+      width: strokeWidthFor(DETAIL_WEIGHT),
+    });
+  }
+
+  const cols = motifs.length <= 4 ? 2 : 3;
+  const rows = Math.ceil(motifs.length / cols);
+  const cellW = contentW / cols;
+  const cellH = contentH / rows;
+  const placements = [];
+
+  motifs.forEach((motifName, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const cx = contentLeft + (col + 0.5) * cellW + (rng() - 0.5) * 0.2 * cellW;
+    const cy = contentTop + (row + 0.5) * cellH + (rng() - 0.5) * 0.2 * cellH;
+
+    const { polylines: drawn, bounds } = drawMotif(motifName, rng);
+    if (bounds.w <= 0 || bounds.h <= 0) {
+      return;
+    }
+    const fit = Math.min((0.8 * cellW) / bounds.w, (0.8 * cellH) / bounds.h);
+    const ox = cx - (bounds.x + bounds.w / 2) * fit;
+    const oy = cy - (bounds.y + bounds.h / 2) * fit;
+
+    placements.push({
+      name: motifName,
+      bounds: { x: ox + bounds.x * fit, y: oy + bounds.y * fit, w: bounds.w * fit, h: bounds.h * fit },
+    });
+
+    polylines.push(
+      ...toPagePolylines(
+        drawn.map((line) => ({
+          points: line.points.map(([x, y]) => [ox + x * fit, oy + y * fit]),
+          closed: line.closed,
+          fill: line.fill,
+          weight: line.weight,
+        })),
+      ),
+    );
+  });
+
+  return { index, seed, motifs, placements, polylines, width: PAGE_WIDTH, height: PAGE_HEIGHT };
+}
+
+function formatNumber(value) {
+  const rounded = Math.round(value * 100) / 100;
+  return Object.is(rounded, -0) ? '0' : String(rounded);
+}
+
+function escapeXml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+/**
+ * SVG path data for one polyline.
+ *
+ * A filled path is closed explicitly even when `closed` is false, because the
+ * PDF writer has to do the same: PDF's `B` operator implicitly closes an open
+ * path, so leaving the SVG to close it implicitly would let the two renderers
+ * disagree about the geometry.
+ *
+ * @param {{ points: Array<[number, number]>, closed?: boolean, fill?: boolean }} line
+ * @returns {string}
+ */
+function polylineToPathData(line) {
+  const parts = line.points.map(
+    ([x, y], i) => `${i === 0 ? 'M' : 'L'}${formatNumber(x)} ${formatNumber(y)}`,
+  );
+  if (line.closed || line.fill) {
+    parts.push('Z');
+  }
+  return parts.join(' ');
+}
+
+/**
+ * Serialise a polyline set as a standalone SVG document.
+ *
+ * @param {Array<object>} polylines
+ * @param {{ width?: number, height?: number, label?: string }} [options]
+ * @returns {string}
+ */
+function polylinesToSvg(polylines, options = {}) {
+  const width = options.width ?? PAGE_WIDTH;
+  const height = options.height ?? PAGE_HEIGHT;
+  const label = options.label ?? 'Colouring page';
+
+  const body = polylines
+    .map((line) => {
+      const fill = line.fill ? '#ffffff' : 'none';
+      const stroke = line.stroke === false ? 'none' : '#000000';
+      const strokeWidth = formatNumber(line.width ?? strokeWidthFor(line.weight ?? MAIN_WEIGHT));
+      return (
+        `<path d="${polylineToPathData(line)}" fill="${fill}" stroke="${stroke}"` +
+        ` stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round"/>`
+      );
+    })
+    .join('');
+
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${formatNumber(width)} ${formatNumber(height)}"` +
+    ` width="${formatNumber(width)}" height="${formatNumber(height)}" role="img"` +
+    ` aria-label="${escapeXml(label)}">${body}</svg>`
+  );
+}
+
+/**
+ * Serialise a composed page.
+ *
+ * @param {{ index: number, polylines: Array<object>, width: number, height: number }} page
+ * @returns {string}
+ */
+function pageToSvg(page) {
+  return polylinesToSvg(page.polylines, {
+    width: page.width,
+    height: page.height,
+    label: `Colouring page ${page.index + 1}`,
+  });
+}
+
+  return { strokeWidthFor, toPagePolylines, composePage, polylineToPathData, polylinesToSvg, pageToSvg, PAGE_WIDTH, PAGE_HEIGHT, FRAME_INSET, INNER_FRAME_INSET, GROUND_Y, MIN_PAGE_MOTIFS, MAX_PAGE_MOTIFS, STROKE_BASE, STROKE_FLOOR };
+})();
+
+const __mod_src_cover = (function () {
+/**
+ * Cover composition.
+ *
+ * The cover is the one page that carries text, so it owns the name-fitting
+ * rule: the child's name is uppercased, wrapped to at most four lines, and
+ * never drawn below 60 pt cap height. A 20-character name needs three lines at
+ * that floor, which is why wrapping exists at all rather than a single
+ * shrinking line.
+ *
+ * Composition reuses the interior page's polyline IR and SVG writer, so the
+ * cover and the pages cannot drift apart in stroke handling or fill semantics.
+ */
+
+const { DETAIL_WEIGHT, MAIN_WEIGHT, MOTIF_NAMES, drawMotif } = __mod_src_motifs;
+const { deriveSeed, hashString, makeRng, pickDistinct } = __mod_src_rng;
+const { motifsForTheme, normaliseTheme } = __mod_src_themes;
+const { hasGlyph, layoutText, measureText } = __mod_src_lettering;
+const { PAGE_HEIGHT, PAGE_WIDTH, polylinesToSvg, strokeWidthFor, toPagePolylines } = __mod_src_page;
+
+/** Fixed cover title. */
+const COVER_TITLE = 'MY COLOURING BOOK';
+
+/** Smallest cap height the name may be drawn at, in points. */
+const MIN_NAME_SIZE = 60;
+
+/** Largest cap height the name may be drawn at, in points. */
+const MAX_NAME_SIZE = 120;
+
+/** Most lines the name may wrap to. */
+const MAX_NAME_LINES = 4;
+
+const COVER_FRAME_INSET = 20;
+const COVER_INNER_INSET = 30;
+const TEXT_WIDTH = 495;
+const TITLE_SIZE = 26;
+const TITLE_Y = 150;
+const NAME_CENTRE_Y = 400;
+const SUBTITLE_SIZE = 20;
+const SUBTITLE_Y = 620;
+const ORNAMENT_RADIUS = 8;
+const MOTIF_BOX = 100;
+const MOTIF_ROW_Y = 730;
+
+function wrapWords(text, size, maxWidth) {
+  const words = text.split(' ').filter(Boolean);
+  const lines = [];
+  let current = '';
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (current && measureText(candidate, { size }) > maxWidth) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) {
+    lines.push(current);
+  }
+  return lines;
+}
+
+function wrapChars(text, size, maxWidth) {
+  const lines = [];
+  let current = '';
+  for (const char of text) {
+    const candidate = current + char;
+    if (current && measureText(candidate, { size }) > maxWidth) {
+      lines.push(current);
+      current = char === ' ' ? '' : char;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) {
+    lines.push(current);
+  }
+  return lines;
+}
+
+/**
+ * Largest cap height at which the name fits `maxWidth` in at most `maxLines`
+ * lines, preferring word boundaries. Only when no size at or above `minSize`
+ * works does it fall back to breaking inside a word at `minSize`.
+ *
+ * @param {string} text
+ * @param {{ maxWidth?: number, maxSize?: number, minSize?: number, maxLines?: number }} [options]
+ * @returns {{ lines: string[], size: number }}
+ */
+function fitName(text, options = {}) {
+  const maxWidth = options.maxWidth ?? TEXT_WIDTH;
+  const maxSize = options.maxSize ?? MAX_NAME_SIZE;
+  const minSize = options.minSize ?? MIN_NAME_SIZE;
+  const maxLines = options.maxLines ?? MAX_NAME_LINES;
+  const upper = String(text).toUpperCase();
+
+  for (let size = maxSize; size >= minSize; size -= 1) {
+    const lines = wrapWords(upper, size, maxWidth);
+    const fits = lines.length <= maxLines
+      && lines.every((line) => measureText(line, { size }) <= maxWidth);
+    if (fits) {
+      return { lines, size };
+    }
+  }
+  return { lines: wrapChars(upper, minSize, maxWidth), size: minSize };
+}
+
+function drawableText(text) {
+  return [...String(text)]
+    .filter((char) => hasGlyph(char))
+    .join('')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function rect(x, y, w, h, width) {
+  return {
+    points: [[x, y], [x + w, y], [x + w, y + h], [x, y + h]],
+    closed: true,
+    fill: false,
+    width,
+  };
+}
+
+function circle(cx, cy, r, width, segments = 16) {
+  const points = [];
+  for (let i = 0; i < segments; i += 1) {
+    const angle = (i / segments) * Math.PI * 2;
+    points.push([cx + Math.cos(angle) * r, cy + Math.sin(angle) * r]);
+  }
+  return { points, closed: true, fill: false, width };
+}
+
+/**
+ * Compose the cover.
+ *
+ * @param {string} theme
+ * @param {string} name
+ * @returns {{
+ *   seed: number,
+ *   name: string,
+ *   theme: string,
+ *   title: string,
+ *   subtitle: string,
+ *   nameSize: number,
+ *   nameLines: string[],
+ *   motifs: string[],
+ *   polylines: Array<object>,
+ *   width: number,
+ *   height: number,
+ * }}
+ */
+function composeCover(theme, name) {
+  const cleanName = String(name).trim().replace(/\s+/g, ' ');
+  const upper = cleanName.toUpperCase();
+  const unsupported = [...upper].filter((char) => !hasGlyph(char));
+  if (unsupported.length > 0) {
+    throw new Error(`name contains characters the book cannot draw: ${unsupported.join(' ')}`);
+  }
+
+  const seed = hashString(
+    `cover\u0000${normaliseTheme(theme)}\u0000${cleanName.toLowerCase()}`,
+  );
+  const rng = makeRng(seed);
+
+  const polylines = [
+    rect(
+      COVER_FRAME_INSET,
+      COVER_FRAME_INSET,
+      PAGE_WIDTH - 2 * COVER_FRAME_INSET,
+      PAGE_HEIGHT - 2 * COVER_FRAME_INSET,
+      4,
+    ),
+    rect(
+      COVER_INNER_INSET,
+      COVER_INNER_INSET,
+      PAGE_WIDTH - 2 * COVER_INNER_INSET,
+      PAGE_HEIGHT - 2 * COVER_INNER_INSET,
+      1.5,
+    ),
+  ];
+
+  const corners = [
+    [COVER_INNER_INSET, COVER_INNER_INSET],
+    [PAGE_WIDTH - COVER_INNER_INSET, COVER_INNER_INSET],
+    [COVER_INNER_INSET, PAGE_HEIGHT - COVER_INNER_INSET],
+    [PAGE_WIDTH - COVER_INNER_INSET, PAGE_HEIGHT - COVER_INNER_INSET],
+  ];
+  for (const [cx, cy] of corners) {
+    polylines.push(circle(cx, cy, ORNAMENT_RADIUS, strokeWidthFor(DETAIL_WEIGHT)));
+  }
+
+  const titleWidth = measureText(COVER_TITLE, { size: TITLE_SIZE });
+  polylines.push(
+    ...toPagePolylines(
+      layoutText(COVER_TITLE, {
+        x: (PAGE_WIDTH - titleWidth) / 2,
+        y: TITLE_Y,
+        size: TITLE_SIZE,
+        weight: MAIN_WEIGHT,
+      }),
+    ),
+  );
+
+  const fitted = fitName(cleanName, { maxWidth: TEXT_WIDTH });
+  const lineGap = fitted.size * 1.35;
+  const capBlockHeight = (fitted.lines.length - 1) * lineGap + fitted.size;
+  const blockTop = NAME_CENTRE_Y - capBlockHeight / 2;
+  fitted.lines.forEach((line, i) => {
+    const lineWidth = measureText(line, { size: fitted.size });
+    polylines.push(
+      ...toPagePolylines(
+        layoutText(line, {
+          x: (PAGE_WIDTH - lineWidth) / 2,
+          y: blockTop + i * lineGap,
+          size: fitted.size,
+          weight: MAIN_WEIGHT,
+        }),
+      ),
+    );
+  });
+
+  const subtitle = drawableText(String(theme).toUpperCase()) || 'COLOURING FUN';
+  const subtitleWidth = measureText(subtitle, { size: SUBTITLE_SIZE });
+  polylines.push(
+    ...toPagePolylines(
+      layoutText(subtitle, {
+        x: (PAGE_WIDTH - subtitleWidth) / 2,
+        y: SUBTITLE_Y,
+        size: SUBTITLE_SIZE,
+        weight: DETAIL_WEIGHT,
+      }),
+    ),
+  );
+
+  const { motifs } = motifsForTheme(theme);
+  const drawable = motifs.filter((motif) => MOTIF_NAMES.includes(motif));
+  const pool = drawable.length > 0 ? drawable : MOTIF_NAMES;
+  const chosen = pickDistinct(rng, pool, Math.min(3, pool.length));
+  const boxW = (TEXT_WIDTH / 3) * 0.8;
+
+  chosen.forEach((motifName, i) => {
+    const cx = (PAGE_WIDTH - TEXT_WIDTH) / 2 + (TEXT_WIDTH / 3) * (i + 0.5);
+    const { polylines: drawn, bounds } = drawMotif(motifName, rng);
+    if (bounds.w <= 0 || bounds.h <= 0) {
+      return;
+    }
+    const fit = Math.min(boxW / bounds.w, MOTIF_BOX / bounds.h);
+    const ox = cx - (bounds.x + bounds.w / 2) * fit;
+    const oy = MOTIF_ROW_Y - (bounds.y + bounds.h / 2) * fit;
+    polylines.push(
+      ...toPagePolylines(
+        drawn.map((line) => ({
+          points: line.points.map(([x, y]) => [ox + x * fit, oy + y * fit]),
+          closed: line.closed,
+          fill: line.fill,
+          weight: line.weight,
+        })),
+      ),
+    );
+  });
+
+  return {
+    seed,
+    name: cleanName,
+    theme: String(theme).trim(),
+    title: COVER_TITLE,
+    subtitle,
+    nameSize: fitted.size,
+    nameLines: fitted.lines,
+    motifs: chosen,
+    polylines,
+    width: PAGE_WIDTH,
+    height: PAGE_HEIGHT,
+  };
+}
+
+/**
+ * Serialise a composed cover.
+ *
+ * @param {ReturnType<typeof composeCover>} cover
+ * @returns {string}
+ */
+function coverToSvg(cover) {
+  return polylinesToSvg(cover.polylines, {
+    width: cover.width,
+    height: cover.height,
+    label: `${cover.name}'s colouring book cover`,
+  });
+}
+
+  return { fitName, composeCover, coverToSvg, COVER_TITLE, MIN_NAME_SIZE, MAX_NAME_SIZE, MAX_NAME_LINES };
+})();
+
+const __mod_src_pdf = (function () {
+/**
+ * Minimal PDF 1.4 writer.
+ *
+ * Consumes the same polyline IR the SVG writer uses — top-down A4 user units,
+ * `closed`, `fill`, `stroke`, and `width` in points — and returns a
+ * `Uint8Array`. This is the only module that flips Y: the IR stays top-down
+ * everywhere else, so the preview and the print cannot drift apart.
+ *
+ * A page may also carry a JPEG image. The image is embedded as a `/DCTDecode`
+ * XObject with its original bytes untouched, because the Gemini image model
+ * returns `image/jpeg` and re-encoding it would only lose quality. Vector
+ * polylines draw on top of the image, which is how the cover puts the child's
+ * name over a generated illustration.
+ *
+ * Three details are load-bearing and easy to get wrong:
+ *
+ * 1. **Byte offsets.** The cross-reference table stores the byte offset of every
+ *    object. Mixing JS string lengths with multi-byte bytes shifts every
+ *    subsequent offset, so the document is assembled as an array of byte chunks
+ *    and offsets are accumulated from `chunk.length`, never from a string.
+ * 2. **Fill colour.** PDF's default fill colour is black, so a `B` operator
+ *    without an explicit `1 1 1 rg` would paint a filled shape solid black. The
+ *    fill colour is set to white once per page and never changed.
+ * 3. **Graphics state.** `cm` permanently alters the current transformation
+ *    matrix, so the image is drawn inside `q`/`Q`. Without that, every polyline
+ *    after the image would be scaled by the image's placement matrix.
+ *
+ * `B` implicitly closes an open path, which would silently change the shape of a
+ * `fill: true, closed: false` polyline. Both this writer and the SVG writer
+ * therefore close a path whenever it is closed *or* filled, so the two renderers
+ * agree on the geometry.
+ */
+
+/** PDF version this writer emits. */
+const PDF_VERSION = '1.4';
+
+/** A4 portrait media box in PostScript points. */
+const MEDIA_BOX = Object.freeze([0, 0, 595.28, 841.89]);
+
+/** Thinnest stroke this writer will emit, in points. */
+const MIN_STROKE_WIDTH = 4;
+
+/** Start-of-frame markers that carry the frame dimensions. */
+const SOF_MARKERS = new Set([
+  0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7,
+  0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf,
+]);
+
+function formatNumber(value) {
+  const rounded = Math.round(value * 100) / 100;
+  return Object.is(rounded, -0) ? '0' : String(rounded);
+}
+
+function asciiBytes(text) {
+  const out = new Uint8Array(text.length);
+  for (let i = 0; i < text.length; i += 1) {
+    const code = text.charCodeAt(i);
+    if (code > 127) {
+      throw new Error(`non-ASCII character in PDF structure: ${JSON.stringify(text[i])}`);
+    }
+    out[i] = code;
+  }
+  return out;
+}
+
+/**
+ * Read the frame dimensions out of a JPEG.
+ *
+ * Segments are walked by their declared length, so an EXIF thumbnail's own
+ * start-of-frame marker — which lives inside the APP1 payload — is never
+ * mistaken for the main frame. That is the whole reason this is a parser and not
+ * a byte scan.
+ *
+ * @param {Uint8Array} bytes
+ * @returns {{ width: number, height: number, components: number }}
+ */
+function jpegSize(bytes) {
+  if (!(bytes instanceof Uint8Array) || bytes.length < 4) {
+    throw new TypeError('jpegSize expects a Uint8Array of JPEG bytes');
+  }
+  if (bytes[0] !== 0xff || bytes[1] !== 0xd8) {
+    throw new Error('not a JPEG: missing the SOI marker');
+  }
+
+  let cursor = 2;
+  while (cursor + 3 < bytes.length) {
+    if (bytes[cursor] !== 0xff) {
+      cursor += 1;
+      continue;
+    }
+    const marker = bytes[cursor + 1];
+
+    // Standalone markers carry no length field.
+    if (marker === 0xd8 || marker === 0xd9 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
+      cursor += 2;
+      continue;
+    }
+
+    // A start-of-scan means the frame header was never found.
+    if (marker === 0xda) {
+      break;
+    }
+
+    const length = (bytes[cursor + 2] << 8) | bytes[cursor + 3];
+    if (length < 2) {
+      throw new Error('malformed JPEG: segment length below 2');
+    }
+
+    if (SOF_MARKERS.has(marker)) {
+      if (cursor + 9 >= bytes.length) {
+        throw new Error('malformed JPEG: truncated frame header');
+      }
+      return {
+        height: (bytes[cursor + 5] << 8) | bytes[cursor + 6],
+        width: (bytes[cursor + 7] << 8) | bytes[cursor + 8],
+        components: bytes[cursor + 9],
+      };
+    }
+
+    cursor += 2 + length;
+  }
+
+  throw new Error('malformed JPEG: no start-of-frame marker');
+}
+
+/**
+ * Centre an image on a page without distorting it.
+ *
+ * One function, used by the PDF placement matrix and by the browser preview, so
+ * the printed page and the on-screen page cannot disagree about where the
+ * artwork sits.
+ *
+ * @param {number} imageWidth
+ * @param {number} imageHeight
+ * @param {number} [pageWidth]
+ * @param {number} [pageHeight]
+ * @returns {{ x: number, y: number, w: number, h: number }}
+ */
+function fitImageRect(imageWidth, imageHeight, pageWidth = MEDIA_BOX[2], pageHeight = MEDIA_BOX[3]) {
+  const iw = Number(imageWidth);
+  const ih = Number(imageHeight);
+  if (!Number.isFinite(iw) || !Number.isFinite(ih) || iw <= 0 || ih <= 0) {
+    throw new TypeError('fitImageRect expects positive image dimensions');
+  }
+  const scale = Math.min(pageWidth / iw, pageHeight / ih);
+  const w = iw * scale;
+  const h = ih * scale;
+  return { x: (pageWidth - w) / 2, y: (pageHeight - h) / 2, w, h };
+}
+
+/**
+ * Encode a document-info string. Plain ASCII becomes a literal string; anything
+ * else becomes a UTF-16BE hex string with a byte-order mark, because a raw UTF-8
+ * literal would be read as PDFDocEncoding and mangle names like `Zoë`.
+ *
+ * @param {string} value
+ * @returns {string}
+ */
+function pdfTextString(value) {
+  const text = String(value);
+  if (/^[\x20-\x7e]*$/.test(text)) {
+    return `(${text.replace(/[\\()]/g, (char) => `\\${char}`)})`;
+  }
+  let hex = 'FEFF';
+  for (const char of text) {
+    const code = char.codePointAt(0);
+    if (code > 0xffff) {
+      const offset = code - 0x10000;
+      hex += (0xd800 + (offset >> 10)).toString(16).padStart(4, '0').toUpperCase();
+      hex += (0xdc00 + (offset & 0x3ff)).toString(16).padStart(4, '0').toUpperCase();
+    } else if (code >= 0xd800 && code <= 0xdfff) {
+      // A lone surrogate is not a code point. Emitting it verbatim would write
+      // ill-formed UTF-16BE, so substitute the replacement character.
+      hex += 'FFFD';
+    } else {
+      hex += code.toString(16).padStart(4, '0').toUpperCase();
+    }
+  }
+  return `<${hex}>`;
+}
+
+/**
+ * Build one page's content stream.
+ *
+ * @param {{
+ *   polylines?: Array<object>,
+ *   image?: { rect?: { x: number, y: number, w: number, h: number } },
+ *   width?: number,
+ *   height?: number,
+ * }} page
+ * @returns {string}
+ */
+function pageContentStream(page) {
+  const width = page.width ?? MEDIA_BOX[2];
+  const height = page.height ?? MEDIA_BOX[3];
+  const lines = [
+    '1 1 1 rg',
+    `0 0 ${formatNumber(width)} ${formatNumber(height)} re`,
+    'f',
+  ];
+
+  if (page.image) {
+    const rect = page.image.rect ?? fitImageRect(
+      page.image.width ?? width,
+      page.image.height ?? height,
+      width,
+      height,
+    );
+    // `cm` is not scoped, so the image placement is wrapped in q/Q. Without it
+    // every polyline below would inherit the image's matrix.
+    lines.push('q');
+    lines.push(
+      `${formatNumber(rect.w)} 0 0 ${formatNumber(rect.h)}`
+        + ` ${formatNumber(rect.x)} ${formatNumber(height - rect.y - rect.h)} cm`,
+    );
+    lines.push('/Im0 Do');
+    lines.push('Q');
+  }
+
+  lines.push('0 0 0 RG');
+  lines.push('1 J');
+  lines.push('1 j');
+
+  for (const line of page.polylines ?? []) {
+    if (!Array.isArray(line.points) || line.points.length < 2) {
+      continue;
+    }
+    const strokeWidth = Math.max(MIN_STROKE_WIDTH, line.width ?? MIN_STROKE_WIDTH);
+    lines.push(`${formatNumber(strokeWidth)} w`);
+    const [first, ...rest] = line.points;
+    lines.push(`${formatNumber(first[0])} ${formatNumber(height - first[1])} m`);
+    for (const [x, y] of rest) {
+      lines.push(`${formatNumber(x)} ${formatNumber(height - y)} l`);
+    }
+    if (line.closed || line.fill) {
+      lines.push('h');
+    }
+    if (line.fill && line.stroke === false) {
+      // A fill with no stroke: the white band behind the cover name. `B` would
+      // outline it in black.
+      lines.push('f');
+    } else {
+      lines.push(line.fill ? 'B' : 'S');
+    }
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Build a complete PDF document.
+ *
+ * Object numbers are allocated rather than hardcoded, because a page that
+ * carries an image needs an extra object. The allocation order keeps the
+ * vector-only numbering identical to the original writer — catalog 1, pages 2,
+ * then a page/content pair per page, then any image objects, then the info
+ * dictionary — so a book without images produces the same document it always
+ * did.
+ *
+ * @param {Array<{
+ *   polylines?: Array<object>,
+ *   image?: { bytes: Uint8Array, width?: number, height?: number, rect?: object },
+ *   width?: number,
+ *   height?: number,
+ * }>} pages
+ * @param {{ title?: string, producer?: string }} [options]
+ * @returns {Uint8Array}
+ */
+function buildPdf(pages, options = {}) {
+  if (!Array.isArray(pages) || pages.length === 0) {
+    throw new TypeError('buildPdf expects a non-empty array of pages');
+  }
+
+  const chunks = [];
+  let offset = 0;
+  const offsets = [];
+  const push = (bytes) => {
+    chunks.push(bytes);
+    offset += bytes.length;
+  };
+
+  push(asciiBytes(`%PDF-${PDF_VERSION}\n`));
+  push(new Uint8Array([0x25, 0xe2, 0xe3, 0xcf, 0xd3, 0x0a]));
+
+  const pageCount = pages.length;
+  const catalogNumber = 1;
+  const pagesNumber = 2;
+  const pageNumbers = pages.map((_, index) => 3 + 2 * index);
+  const contentNumbers = pages.map((_, index) => 4 + 2 * index);
+  const firstImageNumber = 3 + 2 * pageCount;
+  const imageNumbers = [];
+  let nextImageNumber = firstImageNumber;
+  for (const page of pages) {
+    if (page.image) {
+      imageNumbers.push(nextImageNumber);
+      nextImageNumber += 1;
+    } else {
+      imageNumbers.push(0);
+    }
+  }
+  const infoNumber = nextImageNumber;
+  const size = infoNumber + 1;
+
+  offsets[catalogNumber] = offset;
+  push(asciiBytes(`${catalogNumber} 0 obj\n<< /Type /Catalog /Pages ${pagesNumber} 0 R >>\nendobj\n`));
+
+  const kids = pageNumbers.map((number) => `${number} 0 R`).join(' ');
+  offsets[pagesNumber] = offset;
+  push(asciiBytes(
+    `${pagesNumber} 0 obj\n<< /Type /Pages /Kids [${kids}] /Count ${pageCount} >>\nendobj\n`,
+  ));
+
+  pages.forEach((page, index) => {
+    const pageNumber = pageNumbers[index];
+    const contentNumber = contentNumbers[index];
+    const imageNumber = imageNumbers[index];
+    const content = asciiBytes(pageContentStream(page));
+    const width = formatNumber(page.width ?? MEDIA_BOX[2]);
+    const height = formatNumber(page.height ?? MEDIA_BOX[3]);
+    const resources = imageNumber > 0
+      ? `<< /XObject << /Im0 ${imageNumber} 0 R >> >>`
+      : '<< >>';
+
+    offsets[pageNumber] = offset;
+    push(
+      asciiBytes(
+        `${pageNumber} 0 obj\n<< /Type /Page /Parent ${pagesNumber} 0 R /MediaBox [0 0 ${width} ${height}]`
+          + ` /Resources ${resources} /Contents ${contentNumber} 0 R >>\nendobj\n`,
+      ),
+    );
+
+    offsets[contentNumber] = offset;
+    push(asciiBytes(`${contentNumber} 0 obj\n<< /Length ${content.length} >>\nstream\n`));
+    push(content);
+    push(asciiBytes('\nendstream\nendobj\n'));
+  });
+
+  pages.forEach((page, index) => {
+    const imageNumber = imageNumbers[index];
+    if (imageNumber === 0) {
+      return;
+    }
+    const bytes = page.image.bytes;
+    if (!(bytes instanceof Uint8Array)) {
+      throw new TypeError('a page image must be a Uint8Array of JPEG bytes');
+    }
+    const frame = jpegSize(bytes);
+    const imageWidth = page.image.width ?? frame.width;
+    const imageHeight = page.image.height ?? frame.height;
+    const colorSpace = frame.components === 1 ? '/DeviceGray' : '/DeviceRGB';
+
+    offsets[imageNumber] = offset;
+    push(asciiBytes(
+      `${imageNumber} 0 obj\n<< /Type /XObject /Subtype /Image`
+        + ` /Width ${imageWidth} /Height ${imageHeight}`
+        + ` /ColorSpace ${colorSpace} /BitsPerComponent 8`
+        + ` /Filter /DCTDecode /Length ${bytes.length} >>\nstream\n`,
+    ));
+    push(bytes);
+    push(asciiBytes('\nendstream\nendobj\n'));
+  });
+
+  const title = options.title ?? 'Colouring Book';
+  const producer = options.producer ?? 'children-colouring-book';
+  offsets[infoNumber] = offset;
+  push(
+    asciiBytes(
+      `${infoNumber} 0 obj\n<< /Title ${pdfTextString(title)} /Producer ${pdfTextString(producer)} >>\nendobj\n`,
+    ),
+  );
+
+  const xrefOffset = offset;
+  let xref = `xref\n0 ${size}\n0000000000 65535 f \n`;
+  for (let number = 1; number < size; number += 1) {
+    xref += `${String(offsets[number]).padStart(10, '0')} 00000 n \n`;
+  }
+  push(asciiBytes(xref));
+
+  push(
+    asciiBytes(
+      `trailer\n<< /Size ${size} /Root ${catalogNumber} 0 R /Info ${infoNumber} 0 R >>\n`
+        + `startxref\n${xrefOffset}\n%%EOF\n`,
+    ),
+  );
+
+  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const document = new Uint8Array(total);
+  let cursor = 0;
+  for (const chunk of chunks) {
+    document.set(chunk, cursor);
+    cursor += chunk.length;
+  }
+  return document;
+}
+
+  return { jpegSize, fitImageRect, pdfTextString, pageContentStream, buildPdf, PDF_VERSION, MEDIA_BOX, MIN_STROKE_WIDTH };
+})();
+
+const __mod_src_imagegen = (function () {
+/**
+ * Gemini image generation client.
+ *
+ * The cheapest model in the nano-banana family is `gemini-3.1-flash-lite-image`
+ * (Nano Banana 2 Lite). Google's image-generation docs call it "the fastest and
+ * cheapest Gemini image workhorse model", and its list price is $0.0336 per 1K
+ * image — $30 per million image output tokens, 1120 tokens per image, measured.
+ * `gemini-nano-banana-2.1` costs the same at 1K but is the heavier model, and
+ * `gemini-3-pro-image` is four times the price.
+ *
+ * The model returns `image/jpeg`, not PNG. That is not a preference: it is what
+ * the endpoint does, and it is why `src/pdf.js` can embed the bytes untouched
+ * with `/DCTDecode` instead of inflating and re-encoding a PNG.
+ *
+ * Everything here is pure except `requestImage` and `generateImages`, which take
+ * an injectable `fetch` so the suite can exercise the whole path without a
+ * network call.
+ */
+
+/** Cheapest nano-banana image model. */
+const IMAGE_MODEL = 'gemini-3.1-flash-lite-image';
+
+/** List price per 1K image, in USD. */
+const IMAGE_PRICE_USD = 0.0336;
+
+/** Base URL for the generateContent endpoint. */
+const IMAGE_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
+
+/** Portrait 3:4, the closest supported ratio to A4. */
+const IMAGE_ASPECT_RATIO = '3:4';
+
+/** Smallest and cheapest output size. */
+const IMAGE_SIZE = '1K';
+
+/** How many requests may be in flight at once. */
+const IMAGE_CONCURRENCY = 2;
+
+/** Attempts per image, so one 429 does not fail a whole book. */
+const IMAGE_MAX_ATTEMPTS = 2;
+
+/**
+ * The style clause every prompt carries. A colouring page is defined by what it
+ * must not contain as much as by what it must, so the negatives are explicit:
+ * shading, grey, colour and lettering all ruin a page a child is meant to fill.
+ */
+const LINE_ART_STYLE = [
+  'A black and white colouring book page for a young child.',
+  'Thick clean black outlines on pure white.',
+  'No shading, no grey, no colour, no text, no lettering, no words, no numbers.',
+  'Large simple shapes with generous white space to colour in.',
+  'Nothing cropped at the edges.',
+].join(' ');
+
+const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+const BASE64_LOOKUP = (() => {
+  const table = new Int16Array(256).fill(-1);
+  for (let i = 0; i < BASE64_ALPHABET.length; i += 1) {
+    table[BASE64_ALPHABET.charCodeAt(i)] = i;
+  }
+  return table;
+})();
+
+/**
+ * Decode base64 into bytes without `atob` or `Buffer`, so the same code runs in
+ * a browser and in Node.
+ *
+ * @param {string} text
+ * @returns {Uint8Array}
+ */
+function base64ToBytes(text) {
+  const clean = String(text).replace(/[^A-Za-z0-9+/]/g, '');
+  const out = new Uint8Array(Math.floor((clean.length * 3) / 4));
+  let cursor = 0;
+  for (let i = 0; i < clean.length; i += 4) {
+    const chunk = clean.slice(i, i + 4);
+    const a = BASE64_LOOKUP[chunk.charCodeAt(0)];
+    const b = chunk.length > 1 ? BASE64_LOOKUP[chunk.charCodeAt(1)] : -1;
+    const c = chunk.length > 2 ? BASE64_LOOKUP[chunk.charCodeAt(2)] : -1;
+    const d = chunk.length > 3 ? BASE64_LOOKUP[chunk.charCodeAt(3)] : -1;
+    if (a < 0 || b < 0) {
+      throw new Error('invalid base64 payload');
+    }
+    out[cursor] = (a << 2) | (b >> 4);
+    cursor += 1;
+    if (c >= 0) {
+      out[cursor] = ((b & 15) << 4) | (c >> 2);
+      cursor += 1;
+    }
+    if (d >= 0) {
+      out[cursor] = ((c & 3) << 6) | d;
+      cursor += 1;
+    }
+  }
+  return out.subarray(0, cursor);
+}
+
+/**
+ * Prompt for one interior page.
+ *
+ * The motif list is what makes five pages differ: the planner already chose a
+ * distinct motif set per page, so the prompt inherits that variety instead of
+ * asking the model for randomness it does not have.
+ *
+ * @param {{ theme: string, name: string, pageIndex: number, motifs: string[] }} input
+ * @returns {string}
+ */
+function buildPagePrompt({ theme, name, pageIndex, motifs }) {
+  const subject = Array.isArray(motifs) && motifs.length > 0
+    ? motifs.join(', ')
+    : 'a cheerful scene';
+  return [
+    LINE_ART_STYLE,
+    `Theme: ${String(theme).trim()}.`,
+    `Draw: ${subject}.`,
+    `This is page ${Number(pageIndex) + 1} of a book for ${String(name).trim()}.`,
+    'Centred composition, one clear scene, full page.',
+  ].join(' ');
+}
+
+/**
+ * Prompt for the cover.
+ *
+ * The top third is reserved and left empty on purpose: the child's name is drawn
+ * there as vector strokes by `src/lettering.js`, because an image model will
+ * misspell a name and a misspelled name is a defect rather than a cosmetic
+ * issue. Asking for the space keeps the band from slicing artwork.
+ *
+ * @param {{ theme: string, name: string }} input
+ * @returns {string}
+ */
+function buildCoverPrompt({ theme, name }) {
+  return [
+    LINE_ART_STYLE,
+    `Theme: ${String(theme).trim()}.`,
+    'This is the cover of a colouring book.',
+    'Compose the illustration in the lower two thirds of the page.',
+    'Leave the top third completely empty white space for a title.',
+    `Do not write the name ${String(name).trim()} or any other text.`,
+  ].join(' ');
+}
+
+/**
+ * Estimated spend for a book, in USD.
+ *
+ * @param {number} count
+ * @returns {number}
+ */
+function estimateImageCost(count) {
+  const images = Number(count);
+  if (!Number.isFinite(images) || images <= 0) {
+    return 0;
+  }
+  return images * IMAGE_PRICE_USD;
+}
+
+/**
+ * Build the HTTP request for one image.
+ *
+ * @param {{ prompt: string, model?: string, aspectRatio?: string, imageSize?: string }} input
+ * @returns {{ url: string, headers: Record<string, string>, body: string }}
+ */
+function buildImageRequest({ prompt, model, aspectRatio, imageSize }) {
+  const resolvedModel = model ?? IMAGE_MODEL;
+  return {
+    url: `${IMAGE_ENDPOINT}/${resolvedModel}:generateContent`,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: String(prompt) }] }],
+      generationConfig: {
+        responseModalities: ['IMAGE'],
+        imageConfig: {
+          aspectRatio: aspectRatio ?? IMAGE_ASPECT_RATIO,
+          imageSize: imageSize ?? IMAGE_SIZE,
+        },
+      },
+    }),
+  };
+}
+
+/**
+ * Pull the image out of a generateContent response.
+ *
+ * @param {any} json
+ * @returns {{ mimeType: string, base64: string, bytes: Uint8Array }}
+ */
+function parseImageResponse(json) {
+  const candidates = json?.candidates;
+  if (!Array.isArray(candidates) || candidates.length === 0) {
+    const blocked = json?.promptFeedback?.blockReason;
+    throw new Error(
+      blocked
+        ? `the image service blocked this prompt (${blocked}); try a different theme`
+        : 'the image service returned no candidates',
+    );
+  }
+
+  const candidate = candidates[0];
+  const finish = candidate?.finishReason;
+  if (finish && finish !== 'STOP') {
+    throw new Error(`the image service stopped early (${finish}); try a different theme`);
+  }
+
+  const parts = candidate?.content?.parts;
+  if (!Array.isArray(parts)) {
+    throw new Error('the image service returned no content parts');
+  }
+
+  const imagePart = parts.find((part) => part && part.inlineData && part.inlineData.data);
+  if (!imagePart) {
+    throw new Error('the image service returned no image');
+  }
+
+  const { mimeType, data } = imagePart.inlineData;
+  return {
+    mimeType: mimeType ?? 'image/jpeg',
+    base64: data,
+    bytes: base64ToBytes(data),
+  };
+}
+
+/**
+ * Turn a failed HTTP response into a message a parent can act on.
+ *
+ * @param {number} status
+ * @param {string} detail
+ * @returns {Error}
+ */
+function imageErrorForStatus(status, detail) {
+  const suffix = detail ? ` ${detail}` : '';
+  if (status === 400) {
+    return new Error(`The image service rejected the request (400).${suffix}`);
+  }
+  if (status === 401 || status === 403) {
+    return new Error(`The API key was rejected (${status}). Check it in Google AI Studio.${suffix}`);
+  }
+  if (status === 429) {
+    return new Error(`Rate limit or quota reached (429). Wait a moment and try again.${suffix}`);
+  }
+  if (status >= 500) {
+    return new Error(`The image service is unavailable (${status}). Try again shortly.${suffix}`);
+  }
+  return new Error(`The image service returned ${status}.${suffix}`);
+}
+
+function detailFromBody(text) {
+  try {
+    const parsed = JSON.parse(text);
+    const message = parsed?.error?.message;
+    return typeof message === 'string' ? message.slice(0, 200) : '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Request one image.
+ *
+ * `fetch` is resolved from `globalThis` at call time rather than captured, so a
+ * test can stub it after the module loads.
+ *
+ * @param {{ apiKey: string, prompt: string, model?: string, fetchImpl?: Function, signal?: AbortSignal }} input
+ * @returns {Promise<{ mimeType: string, base64: string, bytes: Uint8Array }>}
+ */
+async function requestImage({ apiKey, prompt, model, fetchImpl, signal }) {
+  const key = typeof apiKey === 'string' ? apiKey.trim() : '';
+  if (key.length === 0) {
+    throw new Error('Enter a Gemini API key to generate images.');
+  }
+
+  const doFetch = fetchImpl ?? globalThis.fetch;
+  if (typeof doFetch !== 'function') {
+    throw new Error('This environment has no fetch, so images cannot be generated.');
+  }
+
+  const request = buildImageRequest({ prompt, model });
+  let response;
+  try {
+    response = await doFetch(request.url, {
+      method: 'POST',
+      headers: { ...request.headers, 'x-goog-api-key': key },
+      body: request.body,
+      signal,
+    });
+  } catch (error) {
+    if (error && error.name === 'AbortError') {
+      throw error;
+    }
+    throw new Error(
+      'Could not reach the image service. If you opened this file from disk, '
+        + 'run `npm start` and use http://localhost:8000 instead.',
+    );
+  }
+
+  if (!response.ok) {
+    const text = typeof response.text === 'function' ? await response.text() : '';
+    throw imageErrorForStatus(response.status, detailFromBody(text));
+  }
+
+  const json = await response.json();
+  return parseImageResponse(json);
+}
+
+/**
+ * Request several images with a concurrency cap, preserving input order.
+ *
+ * Six parallel requests invite a 429, so at most `concurrency` are in flight and
+ * a 429 is retried once before the book fails.
+ *
+ * @param {{ apiKey: string, prompts: string[], model?: string, fetchImpl?: Function, concurrency?: number, signal?: AbortSignal }} input
+ * @returns {Promise<Array<{ mimeType: string, base64: string, bytes: Uint8Array }>>}
+ */
+async function generateImages({
+  apiKey,
+  prompts,
+  model,
+  fetchImpl,
+  concurrency = IMAGE_CONCURRENCY,
+  signal,
+}) {
+  if (!Array.isArray(prompts) || prompts.length === 0) {
+    throw new TypeError('generateImages expects a non-empty array of prompts');
+  }
+
+  const limit = Math.max(1, Math.min(Number(concurrency) || 1, prompts.length));
+  const results = new Array(prompts.length);
+  let next = 0;
+
+  async function worker() {
+    while (next < prompts.length) {
+      const index = next;
+      next += 1;
+      let lastError;
+      for (let attempt = 0; attempt < IMAGE_MAX_ATTEMPTS; attempt += 1) {
+        try {
+          results[index] = await requestImage({
+            apiKey,
+            prompt: prompts[index],
+            model,
+            fetchImpl,
+            signal,
+          });
+          lastError = undefined;
+          break;
+        } catch (error) {
+          lastError = error;
+          const retryable = /\(429\)/.test(error?.message ?? '');
+          if (!retryable || attempt === IMAGE_MAX_ATTEMPTS - 1) {
+            throw error;
+          }
+        }
+      }
+      if (lastError) {
+        throw lastError;
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: limit }, () => worker()));
+  return results;
+}
+
+  return { base64ToBytes, buildPagePrompt, buildCoverPrompt, estimateImageCost, buildImageRequest, parseImageResponse, imageErrorForStatus, requestImage, generateImages, IMAGE_MODEL, IMAGE_PRICE_USD, IMAGE_ENDPOINT, IMAGE_ASPECT_RATIO, IMAGE_SIZE, IMAGE_CONCURRENCY, IMAGE_MAX_ATTEMPTS, LINE_ART_STYLE };
+})();
+
+const __mod_src_book = (function () {
+/**
+ * Book orchestrator.
+ *
+ * Owns the whole pipeline from two strings to a downloadable document:
+ * validation, motif planning, cover and page composition, SVG serialisation for
+ * the preview, and the PDF bytes for the download. Everything here is pure, so
+ * the headless suite exercises exactly the path the browser takes.
+ *
+ * `generateBook` refuses to return a book that fails its own quality bar. Two
+ * pages that render identically, or five pages built from the same handful of
+ * motifs, are a defect rather than a cosmetic issue, so the check throws instead
+ * of shipping a dull book.
+ */
+
+const { deriveSeed, hashString, makeRng, pick, pickDistinct, randInt, shuffle } = __mod_src_rng;
+const { motifsForTheme, normaliseTheme } = __mod_src_themes;
+const { MAIN_WEIGHT, MOTIF_NAMES } = __mod_src_motifs;
+const { hasGlyph, layoutText, measureText } = __mod_src_lettering;
+const { MAX_PAGE_MOTIFS, MIN_PAGE_MOTIFS, PAGE_HEIGHT, PAGE_WIDTH, composePage, pageToSvg, polylinesToSvg, toPagePolylines } = __mod_src_page;
+const { composeCover, coverToSvg, fitName } = __mod_src_cover;
+const { buildPdf, fitImageRect, jpegSize } = __mod_src_pdf;
+const { buildCoverPrompt, buildPagePrompt, estimateImageCost, generateImages } = __mod_src_imagegen;
+
+const MAX_THEME_LENGTH = 60;
+const MAX_NAME_LENGTH = 20;
+const PAGE_COUNT = 5;
+
+/** How many of the interior pages must carry a distinct motif multiset. */
+const MIN_DISTINCT_PAGE_MOTIF_SETS = 4;
+
+const NAME_PATTERN = /^\p{L}[\p{L} '\-]*$/u;
+
+/**
+ * Windows refuses to create a file whose stem is a reserved device name, with
+ * any extension. A child called `Con` would otherwise get a download that
+ * silently fails on Windows.
+ */
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/;
+
+/**
+ * Validate and normalise the two form inputs.
+ *
+ * @param {string} theme
+ * @param {string} name
+ * @returns {{ ok: boolean, errors: string[], theme: string, name: string }}
+ */
+function validateInputs(theme, name) {
+  const errors = [];
+  const cleanTheme = typeof theme === 'string' ? theme.trim().replace(/\s+/g, ' ') : '';
+  const cleanName = typeof name === 'string' ? name.trim().replace(/\s+/g, ' ') : '';
+
+  if (cleanTheme.length === 0) {
+    errors.push('Enter a theme, for example "space dinosaurs".');
+  } else if (cleanTheme.length > MAX_THEME_LENGTH) {
+    errors.push(`Theme must be ${MAX_THEME_LENGTH} characters or fewer.`);
+  }
+
+  if (cleanName.length === 0) {
+    errors.push("Enter the child's name.");
+  } else if (cleanName.length > MAX_NAME_LENGTH) {
+    errors.push(`Name must be ${MAX_NAME_LENGTH} characters or fewer.`);
+  } else if (!NAME_PATTERN.test(cleanName)) {
+    errors.push('Name may only contain letters, spaces, hyphens and apostrophes.');
+  } else if ([...cleanName.toUpperCase()].some((char) => !hasGlyph(char))) {
+    errors.push('Name may only use letters the book can draw.');
+  }
+
+  return { ok: errors.length === 0, errors, theme: cleanTheme, name: cleanName };
+}
+
+/**
+ * Filesystem-safe download name. Accents are folded to their base letter,
+ * apostrophes dropped, any other run of non-alphanumerics collapsed to a
+ * single hyphen, with a `.pdf` suffix.
+ *
+ * @param {string} name
+ * @returns {string}
+ */
+function sanitiseFilename(name) {
+  const base = String(name ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/['\u2019]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  const safe = base || 'colouring-book';
+  return `${WINDOWS_RESERVED.test(safe) ? `${safe}-book` : safe}.pdf`;
+}
+
+/**
+ * Plan which motifs each page draws.
+ *
+ * Every page gets between `MIN_PAGE_MOTIFS` and `MAX_PAGE_MOTIFS` distinct
+ * motifs, at least one of them drawn from the theme's own vocabulary, and each
+ * page derives its own seed so the five pages differ from one another while
+ * the whole book stays reproducible.
+ *
+ * @param {string} theme
+ * @param {string} name
+ * @returns {{ seed: number, motifs: string[], matched: boolean, pages: Array<{ index: number, motifs: string[] }> }}
+ */
+function planBookPages(theme, name) {
+  const { motifs, matched } = motifsForTheme(theme);
+  const drawable = motifs.filter((motif) => MOTIF_NAMES.includes(motif));
+  const pool = drawable.length > 0 ? drawable : MOTIF_NAMES;
+  const seed = hashString(`${normaliseTheme(theme)}\u0000${String(name).trim().toLowerCase()}`);
+
+  const pages = [];
+  for (let index = 0; index < PAGE_COUNT; index += 1) {
+    const rng = makeRng(deriveSeed(seed, index));
+    const count = randInt(rng, MIN_PAGE_MOTIFS, MAX_PAGE_MOTIFS);
+    const chosen = [pick(rng, pool)];
+    const rest = MOTIF_NAMES.filter((motif) => !chosen.includes(motif));
+    chosen.push(...pickDistinct(rng, rest, count - 1));
+    pages.push({ index, motifs: shuffle(rng, chosen) });
+  }
+
+  return { seed, motifs, matched, pages };
+}
+
+/**
+ * Measure how varied a set of composed pages is.
+ *
+ * @param {Array<{ svg: string, motifs: string[] }>} pages
+ * @returns {{ distinctSvgs: boolean, distinctMotifSets: number }}
+ */
+function bookDiversity(pages) {
+  const svgs = pages.map((page) => page.svg);
+  const multisets = pages.map((page) => [...page.motifs].sort().join('+'));
+  return {
+    distinctSvgs: new Set(svgs).size === svgs.length,
+    distinctMotifSets: new Set(multisets).size,
+  };
+}
+
+/**
+ * Generate a complete book.
+ *
+ * @param {string} theme
+ * @param {string} name
+ * @returns {{
+ *   title: string,
+ *   theme: string,
+ *   name: string,
+ *   filename: string,
+ *   cover: { index: number, label: string, svg: string, motifs: string[] },
+ *   pages: Array<{ index: number, label: string, svg: string, motifs: string[] }>,
+ *   pdfBytes: Uint8Array,
+ * }}
+ */
+function generateBook(theme, name) {
+  const result = validateInputs(theme, name);
+  if (!result.ok) {
+    throw new Error(result.errors.join(' '));
+  }
+
+  const plan = planBookPages(result.theme, result.name);
+  const cover = composeCover(result.theme, result.name);
+  const composed = plan.pages.map((page) => (
+    composePage(result.theme, result.name, page.index, { motifs: page.motifs })
+  ));
+
+  const pages = composed.map((page) => ({
+    index: page.index + 1,
+    label: `Page ${page.index + 1}`,
+    svg: pageToSvg(page),
+    motifs: page.motifs,
+  }));
+
+  const diversity = bookDiversity(pages);
+  if (!diversity.distinctSvgs) {
+    throw new Error('generated pages are not pairwise distinct');
+  }
+  if (diversity.distinctMotifSets < MIN_DISTINCT_PAGE_MOTIF_SETS) {
+    throw new Error(
+      `only ${diversity.distinctMotifSets} distinct page motif sets, need ${MIN_DISTINCT_PAGE_MOTIF_SETS}`,
+    );
+  }
+
+  const title = `${result.name}'s colouring book`;
+
+  return {
+    title,
+    theme: result.theme,
+    name: result.name,
+    filename: sanitiseFilename(result.name),
+    cover: {
+      index: 0,
+      label: 'Cover',
+      svg: coverToSvg(cover),
+      motifs: cover.motifs,
+    },
+    pages,
+    pdfBytes: buildPdf([cover, ...composed], { title }),
+  };
+}
+
+/** Horizontal inset of the cover name band, in points. */
+const COVER_BAND_INSET = 40;
+
+/**
+ * Compose a cover from a generated illustration plus the child's name.
+ *
+ * The name is drawn as vector strokes, not asked of the image model, because a
+ * model will misspell a name and a misspelled name is a defect rather than a
+ * cosmetic issue. A white band across the top of the page carries the name, and
+ * its height follows the fitted name block so a wrapped 20-character name cannot
+ * overflow it.
+ *
+ * The band and the name are one polyline set, so the PDF and the browser preview
+ * render the same geometry from the same source.
+ *
+ * @param {{ theme: string, name: string, image: { bytes: Uint8Array, base64?: string, mimeType?: string } }} input
+ * @returns {object}
+ */
+function composeImageCover({ theme, name, image }) {
+  const cleanName = String(name).trim().replace(/\s+/g, ' ');
+  const frame = jpegSize(image.bytes);
+  const rect = fitImageRect(frame.width, frame.height, PAGE_WIDTH, PAGE_HEIGHT);
+
+  const fitted = fitName(cleanName, { maxWidth: PAGE_WIDTH - 2 * COVER_BAND_INSET });
+  const lineGap = fitted.size * 1.35;
+  const blockHeight = (fitted.lines.length - 1) * lineGap + fitted.size;
+  const padding = fitted.size * 0.35;
+  const bandHeight = blockHeight + 2 * padding;
+
+  const polylines = [
+    {
+      points: [[0, 0], [PAGE_WIDTH, 0], [PAGE_WIDTH, bandHeight], [0, bandHeight]],
+      closed: true,
+      fill: true,
+      stroke: false,
+      width: 4,
+    },
+  ];
+
+  fitted.lines.forEach((line, index) => {
+    const lineWidth = measureText(line, { size: fitted.size });
+    polylines.push(
+      ...toPagePolylines(
+        layoutText(line, {
+          x: (PAGE_WIDTH - lineWidth) / 2,
+          y: padding + index * lineGap,
+          size: fitted.size,
+          weight: MAIN_WEIGHT,
+        }),
+      ),
+    );
+  });
+
+  const placed = { ...image, width: frame.width, height: frame.height, rect };
+
+  return {
+    index: 0,
+    label: 'Cover',
+    image: placed,
+    overlaySvg: polylinesToSvg(polylines, {
+      width: PAGE_WIDTH,
+      height: PAGE_HEIGHT,
+      label: `${cleanName}'s colouring book cover`,
+    }),
+    bandHeight,
+    nameLines: fitted.lines,
+    nameSize: fitted.size,
+    motifs: [],
+    pdfPage: { polylines, image: placed, width: PAGE_WIDTH, height: PAGE_HEIGHT },
+  };
+}
+
+/**
+ * Generate a complete book from images.
+ *
+ * Six requests: one cover, five interior pages. The prompts are deterministic —
+ * the same theme and name always ask for the same six pictures — but the images
+ * themselves are not, so the byte-identical guarantee that holds for
+ * `generateBook` does not hold here. That is the trade the user asked for.
+ *
+ * @param {{
+ *   theme: string,
+ *   name: string,
+ *   apiKey: string,
+ *   fetchImpl?: Function,
+ *   model?: string,
+ *   signal?: AbortSignal,
+ * }} input
+ * @returns {Promise<object>}
+ */
+async function generateImageBook({ theme, name, apiKey, fetchImpl, model, signal }) {
+  const result = validateInputs(theme, name);
+  if (!result.ok) {
+    throw new Error(result.errors.join(' '));
+  }
+
+  const plan = planBookPages(result.theme, result.name);
+  const prompts = [
+    buildCoverPrompt({ theme: result.theme, name: result.name }),
+    ...plan.pages.map((page) => buildPagePrompt({
+      theme: result.theme,
+      name: result.name,
+      pageIndex: page.index,
+      motifs: page.motifs,
+    })),
+  ];
+
+  const images = await generateImages({ apiKey, prompts, model, fetchImpl, signal });
+  const [coverImage, ...pageImages] = images;
+
+  const cover = composeImageCover({
+    theme: result.theme,
+    name: result.name,
+    image: coverImage,
+  });
+
+  const pages = pageImages.map((image, index) => {
+    const frame = jpegSize(image.bytes);
+    return {
+      index: index + 1,
+      label: `Page ${index + 1}`,
+      image: {
+        ...image,
+        width: frame.width,
+        height: frame.height,
+        rect: fitImageRect(frame.width, frame.height, PAGE_WIDTH, PAGE_HEIGHT),
+      },
+      motifs: plan.pages[index].motifs,
+    };
+  });
+
+  const title = `${result.name}'s colouring book`;
+  const pdfBytes = buildPdf(
+    [
+      cover.pdfPage,
+      ...pages.map((page) => ({
+        polylines: [],
+        image: page.image,
+        width: PAGE_WIDTH,
+        height: PAGE_HEIGHT,
+      })),
+    ],
+    { title },
+  );
+
+  return {
+    title,
+    theme: result.theme,
+    name: result.name,
+    filename: sanitiseFilename(result.name),
+    mode: 'image',
+    cover,
+    pages,
+    pdfBytes,
+    costUsd: estimateImageCost(images.length),
+  };
+}
+
+  return { validateInputs, sanitiseFilename, planBookPages, bookDiversity, generateBook, composeImageCover, generateImageBook, MAX_THEME_LENGTH, MAX_NAME_LENGTH, PAGE_COUNT, MIN_DISTINCT_PAGE_MOTIF_SETS, COVER_BAND_INSET };
+})();
+
+const __mod_app = (function () {
+/**
+ * DOM controller for the colouring book.
+ *
+ * This module is wiring only: it reads the form, hands the two strings to
+ * `generateBook` or `generateImageBook`, paints the returned cards into the
+ * preview grid, and turns the returned bytes into a download. Every decision
+ * worth testing lives in `src/book.js` and below, so the headless suite covers
+ * the real path without a DOM shim.
+ *
+ * Which pipeline runs is decided by one thing: whether an API key is present.
+ * A key means six generated images; no key means the offline vector book. There
+ * is no mode switch to get out of step with the key field.
+ *
+ * Importing this module in Node is safe: the wiring only runs when `document`
+ * exists.
+ */
+
+const { PAGE_COUNT, generateBook, generateImageBook } = __mod_src_book;
+const { IMAGE_MODEL, estimateImageCost } = __mod_src_imagegen;
+const { PAGE_HEIGHT, PAGE_WIDTH } = __mod_src_page;
+
+// The inline boot check in index.html reads this. A page opened over file://
+// cannot fetch a module at all, so this never runs there and the notice
+// explains why nothing generated.
+if (typeof window !== 'undefined') {
+  window.__bookBooted = true;
+}
+
+const percent = (value, total) => `${((value / total) * 100).toFixed(4)}%`;
+
+/**
+ * Build one preview card.
+ *
+ * A vector card is a standalone SVG. An image card is a page-shaped frame with
+ * the JPEG positioned by the same `rect` the PDF uses, and the cover's overlay
+ * SVG laid over the whole page. Sharing the rect is what stops the preview and
+ * the print from disagreeing about where the artwork and the name sit.
+ *
+ * @param {object} card
+ * @returns {HTMLElement}
+ */
+function renderCard(card) {
+  const figure = document.createElement('figure');
+  figure.className = 'page-preview';
+  figure.setAttribute('data-role', 'page-preview');
+  figure.setAttribute('data-page-index', String(card.index));
+
+  if (card.image) {
+    const frame = document.createElement('div');
+    frame.className = 'page-frame';
+
+    const img = document.createElement('img');
+    img.className = 'page-image';
+    img.src = `data:${card.image.mimeType};base64,${card.image.base64}`;
+    img.alt = card.label;
+    img.decoding = 'async';
+    const rect = card.image.rect;
+    img.style.left = percent(rect.x, PAGE_WIDTH);
+    img.style.top = percent(rect.y, PAGE_HEIGHT);
+    img.style.width = percent(rect.w, PAGE_WIDTH);
+    img.style.height = percent(rect.h, PAGE_HEIGHT);
+    frame.append(img);
+
+    if (card.overlaySvg) {
+      const overlay = document.createElement('div');
+      overlay.className = 'page-overlay';
+      overlay.innerHTML = card.overlaySvg;
+      frame.append(overlay);
+    }
+
+    figure.append(frame);
+  } else {
+    figure.innerHTML = card.svg;
+    const svg = figure.firstElementChild;
+    if (svg && svg.tagName.toLowerCase() === 'svg') {
+      svg.removeAttribute('width');
+      svg.removeAttribute('height');
+      svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    }
+  }
+
+  const caption = document.createElement('figcaption');
+  caption.textContent = card.label;
+  figure.append(caption);
+  return figure;
+}
+
+/**
+ * Replace the preview grid with one card per book page.
+ *
+ * @param {HTMLElement} previewEl
+ * @param {HTMLElement} bookTitle
+ * @param {object} book
+ */
+function renderPreviews(previewEl, bookTitle, book) {
+  for (const node of previewEl.querySelectorAll('[data-role="page-preview"]')) {
+    node.remove();
+  }
+
+  bookTitle.textContent = book.title;
+
+  for (const card of [book.cover, ...book.pages]) {
+    previewEl.append(renderCard(card));
+  }
+}
+
+/**
+ * Hand the generated bytes to the browser as a file download.
+ *
+ * @param {object} book
+ */
+function downloadBook(book) {
+  const blob = new Blob([book.pdfBytes], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = book.filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+/**
+ * Say what the next click will cost before it is clicked.
+ *
+ * @param {HTMLInputElement} apiKeyInput
+ * @param {HTMLElement} costNote
+ */
+function updateCostNote(apiKeyInput, costNote) {
+  const hasKey = apiKeyInput.value.trim().length > 0;
+  costNote.textContent = hasKey
+    ? `${PAGE_COUNT + 1} images with ${IMAGE_MODEL}, about `
+      + `${estimateImageCost(PAGE_COUNT + 1).toFixed(2)} per book.`
+    : 'No key: the book is drawn offline as vector art, at no cost.';
+}
+
+function init() {
+  const themeInput = document.getElementById('theme-input');
+  const nameInput = document.getElementById('name-input');
+  const apiKeyInput = document.querySelector('[data-role="api-key"]');
+  const generateBtn = document.getElementById('generate-btn');
+  const statusEl = document.getElementById('status');
+  const errorEl = document.getElementById('error');
+  const previewEl = document.getElementById('preview');
+  const downloadBtn = document.getElementById('download-btn');
+  const bookTitle = document.getElementById('book-title');
+  const costNote = document.querySelector('[data-role="cost-note"]');
+
+  const form = themeInput.form;
+  if (!form) {
+    return;
+  }
+
+  updateCostNote(apiKeyInput, costNote);
+  apiKeyInput.addEventListener('input', () => updateCostNote(apiKeyInput, costNote));
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+
+    const apiKey = apiKeyInput.value.trim();
+    errorEl.textContent = '';
+    downloadBtn.disabled = true;
+    generateBtn.disabled = true;
+    generateBtn.setAttribute('aria-busy', 'true');
+
+    try {
+      let book;
+      if (apiKey) {
+        statusEl.textContent = `Drawing ${PAGE_COUNT + 1} pictures. This takes a few seconds.`;
+        book = await generateImageBook({
+          theme: themeInput.value,
+          name: nameInput.value,
+          apiKey,
+        });
+      } else {
+        book = generateBook(themeInput.value, nameInput.value);
+      }
+
+      renderPreviews(previewEl, bookTitle, book);
+      statusEl.textContent = book.mode === 'image'
+        ? `Ready: a cover and ${book.pages.length} pages for ${book.name}. `
+          + `Cost about ${book.costUsd.toFixed(2)}.`
+        : `Ready: a cover and ${book.pages.length} pages for ${book.name}.`;
+      downloadBtn.disabled = false;
+      downloadBtn.onclick = () => downloadBook(book);
+    } catch (error) {
+      errorEl.textContent = error.message;
+      statusEl.textContent = '';
+      downloadBtn.disabled = true;
+    } finally {
+      generateBtn.disabled = false;
+      generateBtn.setAttribute('aria-busy', 'false');
+    }
+  });
+}
+
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+}
+
+})();
+})();
+</script>
+</body>
+</html>

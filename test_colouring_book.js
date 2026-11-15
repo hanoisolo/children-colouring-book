@@ -12,6 +12,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { resolve } from 'node:path';
+
+import {
+  build,
+  bundleHtml,
+  bundleScript,
+  collectModules,
+  moduleId,
+  stripBootScript,
+  transformModule,
+} from './build.js';
 
 import {
   hashString,
@@ -2617,4 +2629,118 @@ test('index.html offers the key field and the cost note without new ids', () => 
     html.includes('generativelanguage.googleapis.com'),
     'the page does not say where the key goes',
   );
+});
+
+/* ------------------------------------------------------------------ */
+/* Single-file build                                                   */
+/* ------------------------------------------------------------------ */
+
+test('moduleId is stable and collision-free', () => {
+  assert.equal(moduleId(resolve('src/rng.js')), '__mod_src_rng');
+  assert.equal(moduleId(resolve('app.js')), '__mod_app');
+  assert.equal(moduleId(resolve('src/pdf.js')), '__mod_src_pdf');
+  assert.notEqual(moduleId(resolve('src/pdf.js')), moduleId(resolve('src/page.js')));
+});
+
+test('transformModule rewrites imports and drops export keywords', () => {
+  const mod = transformModule(resolve('src/book.js'));
+  assert.ok(!/^import\s/m.test(mod.body), 'an import survived');
+  assert.ok(!/^export\s/m.test(mod.body), 'an export survived');
+  assert.ok(
+    mod.body.includes('const { deriveSeed, hashString, makeRng, pick, pickDistinct, randInt, shuffle } = __mod_src_rng;'),
+    'the rng import was not rewritten',
+  );
+  assert.ok(mod.deps.some((dep) => dep.endsWith('rng.js')), 'the rng dependency was not recorded');
+  assert.ok(mod.exports.includes('generateBook'), 'generateBook was not recorded as an export');
+  assert.ok(mod.exports.includes('generateImageBook'));
+});
+
+test('transformModule handles a multi-line import', () => {
+  const mod = transformModule(resolve('src/cover.js'));
+  assert.ok(!/^import\s/m.test(mod.body), 'a multi-line import survived');
+  assert.ok(
+    mod.body.includes('polylinesToSvg') && mod.body.includes('__mod_src_page'),
+    'the multi-line page import was not rewritten',
+  );
+});
+
+test('collectModules returns dependencies before dependants', () => {
+  const modules = collectModules(resolve('app.js'));
+  const order = modules.map((mod) => mod.file.replace(/\\/g, '/'));
+  const indexOf = (suffix) => order.findIndex((file) => file.endsWith(suffix));
+
+  assert.ok(indexOf('app.js') === order.length - 1, 'app.js is not last');
+  assert.ok(indexOf('src/rng.js') < indexOf('src/book.js'), 'rng.js comes after book.js');
+  assert.ok(indexOf('src/pdf.js') < indexOf('src/book.js'), 'pdf.js comes after book.js');
+  assert.ok(indexOf('src/imagegen.js') < indexOf('src/book.js'), 'imagegen.js comes after book.js');
+  assert.ok(indexOf('src/page.js') < indexOf('src/cover.js'), 'page.js comes after cover.js');
+  assert.equal(new Set(order).size, order.length, 'a module was bundled twice');
+});
+
+test('bundleScript emits no module syntax and one scope per module', () => {
+  const script = bundleScript(collectModules(resolve('app.js')));
+  assert.ok(!/^import\s/m.test(script), 'an import survived into the bundle');
+  assert.ok(!/^export\s/m.test(script), 'an export survived into the bundle');
+  assert.ok(script.startsWith("(function () {\n'use strict';"), 'the bundle is not strict');
+  assert.ok(script.includes('const __mod_src_rng = (function () {'), 'rng is not scoped');
+  assert.ok(script.includes('return { hashString'), 'rng exports nothing');
+});
+
+test('stripBootScript removes the file:// notice but keeps the module tag', () => {
+  const html = readSource('./index.html');
+  const stripped = stripBootScript(html);
+  assert.ok(!stripped.includes('__bookBooted = false'), 'the boot script survived');
+  assert.ok(stripped.includes('type="module"'), 'the module script was removed too');
+});
+
+test('bundleHtml inlines the stylesheet and the script', () => {
+  const html = readSource('./index.html');
+  const css = readSource('./styles.css');
+  const script = bundleScript(collectModules(resolve('app.js')));
+  const out = bundleHtml({ html, css, script });
+
+  assert.ok(out.includes('<style>'), 'the stylesheet was not inlined');
+  assert.ok(out.includes('--accent: #1f4e79'), 'the stylesheet body is missing');
+  assert.ok(!out.includes('href="styles.css"'), 'the stylesheet link survived');
+  assert.ok(!out.includes('type="module"'), 'the module script survived');
+  assert.ok(!out.includes('src="app.js"'), 'the module src survived');
+  assert.ok(!/\bsrc=/.test(out), 'the document still references an external file');
+  assert.ok(!/\bhref=/.test(out), 'the document still references an external file');
+});
+
+test('bundleHtml escapes a closing script tag inside the bundle', () => {
+  const out = bundleHtml({
+    html: '<script type="module" src="app.js"></script>',
+    css: '',
+    script: 'const x = "</script>";',
+  });
+  assert.ok(!out.includes('"</script>"'), 'a raw closing script tag survived');
+  assert.ok(out.includes('<\\/script>'), 'the closing tag was not escaped');
+});
+
+test('the built file is self-contained and parses', () => {
+  const result = build();
+  assert.ok(result.modules >= 10, `only ${result.modules} modules were bundled`);
+
+  const out = readSource('./dist/colouring-book.html');
+  assert.ok(out.length > 50000, 'the build is suspiciously small');
+  assert.ok(!/^import\s/m.test(out), 'an import survived into the build');
+  assert.ok(!/^export\s/m.test(out), 'an export survived into the build');
+  for (const id of CONTRACT_IDS) {
+    assert.ok(out.includes(`id="${id}"`), `the build is missing id="${id}"`);
+  }
+  assert.ok(out.includes('data-role="api-key"'), 'the build is missing the key field');
+  assert.ok(out.includes('data-role="cost-note"'), 'the build is missing the cost note');
+
+  const script = /<script>\n([\s\S]*?)\n<\/script>/.exec(out);
+  assert.ok(script, 'the build has no inline script');
+  const check = spawnSync(process.execPath, ['--check', '-'], { input: script[1], encoding: 'utf8' });
+  assert.equal(check.status, 0, `the bundled script does not parse: ${check.stderr}`);
+});
+
+test('the build is deterministic', () => {
+  const first = readSource('./dist/colouring-book.html');
+  build();
+  const second = readSource('./dist/colouring-book.html');
+  assert.equal(first, second, 'two builds produced different bytes');
 });
