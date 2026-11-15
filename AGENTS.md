@@ -73,7 +73,7 @@ npm test
 That runs two layers:
 
 ```
-node test_colouring_book.js   # 263 unit tests, no browser, ~320ms
+node test_colouring_book.js   # 267 unit tests, no browser, ~320ms
 node test_browser.js          # 3 browser tests, needs Edge or Chrome, ~3.3s
 ```
 
@@ -240,7 +240,7 @@ then fixed.
 
 - **Upgrade complete: image mode and the downloadable single file are shipped.**
 - Baseline before the upgrade: `d846283`, 151 unit tests + 1 browser test.
-- Gate: `npm test` -> 263 unit tests + 3 browser tests, 0 failures, 0 skipped.
+- Gate: `npm test` -> 267 unit tests + 3 browser tests, 0 failures, 0 skipped.
 - Landed in the upgrade: `src/imagegen.js`, `build.js`,
   `dist/colouring-book.html`; modified `src/pdf.js`, `src/book.js`,
   `src/page.js`, `index.html`, `app.js`, `styles.css`, `package.json`,
@@ -261,32 +261,33 @@ then fixed.
   `app.js` survivors fell to **1**, below the previous baseline. The baseline
   records that improvement plus the new `build.js` entry.
 
-### The mutation gate cannot see `src/` on this project
+### The mutation gate was blind to `src/` — fixed, but read the per-file section
 
-Worth knowing before reading a score off `plans/mutation_report.md`.
-`run_mutation_pass` walks changed files in alphabetical order and stops at
-`--mutation-max` (default 200). `dist/colouring-book.html` sorts before `src/`
-and carries ~3500 added lines, so it consumes the entire budget and
-`src/book.js`, `src/imagegen.js`, `src/pdf.js` and `src/page.js` are never
-mutated. The reported score (6.1%) is an artifact of that ordering, not a
-measurement of the new logic — 179 of the 185 survivors are generated HTML and
-CSS.
+This section used to warn that the gate could not see `src/` at all. Four
+defects caused that, all fixed in the tooling repo (`9284afd`):
 
-Two consequences:
+1. **Alphabetical starvation.** The walk was `sorted(changed)` with a finite
+   cap, so `dist/colouring-book.html` (~3500 added lines) sorted before `src/`
+   and consumed the whole 200-mutant budget. Build output is now skipped by
+   directory and the budget is shared per file.
+2. **Baseline clobbering.** `write_mutation_baseline` replaced the file, so a
+   run that never reached `src/` deleted every `src/` entry. It now merges.
+3. **Hard-kill corruption.** A `finally` cannot run on SIGKILL. Originals go to
+   a sidecar in temp and are restored before the dirty-tree check.
+4. **Clean-exit corruption.** The sidecar covered generated output but a clean
+   exit only deleted it, so a suite that rebuilds a bundle left `dist/` holding
+   a mutant. The `finally` now restores from the sidecar.
 
-1. **Do not read the headline score as coverage.** Read the per-file section.
-   The only files the gate actually measured this upgrade were `app.js` and
-   `build.js`.
-2. **The gate rewrites `plans/mutation_baseline.json` on a non-regressing run,
-   and it replaces the file rather than merging.** A run that never reached
-   `src/` therefore *deletes* the `src/` entries, so the ratchet forgets the
-   coverage it was built to protect. The baseline was restored by hand and
-   merged rather than accepted as written. Check `git diff` on that file after
-   every mutation run; if `src/` entries vanished, restore and merge.
+The score moved from 6.1% to 86.4% because the earlier figure described
+generated HTML rather than source. `dist/colouring-book.html` is still absent
+from the baseline: recording survivors of generated output would bless a
+meaningless number and let the bundle's noise mask a real source regression.
 
-`dist/colouring-book.html` is deliberately absent from the baseline. Recording
-179 survivors of generated output would bless a meaningless number and let the
-bundle's noise mask a real source regression.
+**The run is still partial by design.** `--mutation-max` is shared across
+files, so `per_file = max_mutants // len(targets)`. A file with more mutable
+lines than its share is truncated and the report says so. Raise
+`--mutation-max` to measure more; do not read a truncated file's zero
+survivors as coverage.
 - **Phase 3 complete. All three roadmap phases are done; the project is ship-ready.**
 - Roadmap: `plans/MASTER_ROADMAP.md` (3 phases x 3 segments).
 - Pre-ship security audit: `AUDIT: PASS` (`plans/security_audit.md`). The first
@@ -303,8 +304,11 @@ bundle's noise mask a real source regression.
   review; each completed phase's verdict is archived as
   `plans/milestone_review_phaseN.md`.
 - Phase 3 Stage 6: `SCAN: PASS` (92 assertions added, 9 removed and justified in
-  `plans/removal_justification.md`); mutation 92.9% (92 killed, 7 survived)
-  recorded in `plans/mutation_baseline.json`.
+  `plans/removal_justification.md`).
+- Mutation gate, current: `MUTATION: REVIEW` — 86.4% (184 killed, 29 survived,
+  9 invalid, 222 mutants, no truncation) recorded in
+  `plans/mutation_baseline.json`. `src/book.js` and `src/page.js` are at zero
+  survivors. The 29 that remain are listed below.
 - No further phase is planned. The next step, if requested, is the `gemini-ship`
   skill: documentation, full verification, security audit, publish or PR.
 
@@ -372,10 +376,15 @@ boundary.
    shared polyline points in place. When `validateInputs` and
    `sanitiseFilename` move to `src/book.js`, update the export-parity and
    determinism tests in the same commit.
-5. **Accepted mutation survivors.** The 112 survivors are curve-sampling loop
-   bounds, unexported layout constants, and four DOM-only `app.js` lines. Do
-   not pin them; pinning every internal constant would make any visual
-   adjustment a test failure.
+5. **Accepted mutation survivors.** The 29 that remain are the JPEG marker walk
+   and `fitImageRect` in `src/pdf.js` (10), the base64 decoder, error wording
+   and concurrency clamp in `src/imagegen.js` (13), the bundler's own
+   self-invocation guard in `build.js` (5), and the `percent` formatter in
+   `app.js` (1). Do not pin them: they are loop bounds, unexported constants,
+   error strings and DOM-only lines, and pinning every internal constant would
+   make any visual adjustment a test failure. The cover-band geometry was
+   pinned deliberately and is no longer in this list — see the mutation gate
+   section above.
 
 ## Ship constraints (from the Phase 3 milestone review)
 
@@ -392,9 +401,11 @@ Phase 3 boundary, which returned `AUDIT: PASS`.
    metadata in `/Info /Title`. If screen-reader or search support inside the
    cover page is ever wanted, layer invisible text (`3 Tr`) with a `/Font`
    behind the strokes without changing the geometry.
-3. **92.9% mutation score is the ship baseline.** Do not pin `circle`/`ellipse`
+3. **86.4% mutation score is the ship baseline.** Do not pin `circle`/`ellipse`
    `segments = 24`; curve-sampling defaults are aesthetic tuning, and pinning
-   them makes any visual adjustment a test failure.
+   them makes any visual adjustment a test failure. The cover-band geometry is
+   the exception and is pinned on purpose: it decides whether a name fits, so
+   it is behaviour rather than tuning.
 4. **The mutation gate cannot see deleted logic.** It mutates added lines only.
    Any future change that deletes behaviour must be covered by the
    assertion-integrity scan plus a hand-written replacement test, because the
