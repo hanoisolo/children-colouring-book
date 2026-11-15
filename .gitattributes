@@ -1,0 +1,11 @@
+# Normalise line endings to LF in the working tree.
+#
+# The Stage 6 mutation gate rewrites source files with LF endings. With
+# core.autocrlf=true that leaves every touched file showing as modified even
+# though its content is unchanged, which makes the tree look dirty and blocks
+# the next mutation run (it exits 2 on a dirty tree). Pinning eol=lf keeps the
+# working tree and the index in agreement.
+* text=auto eol=lf
+
+*.sh text eol=lf
+*.pdf binary

@@ -154,6 +154,15 @@ test('makeRng rejects a non-integer seed', () => {
   assert.throws(() => makeRng('42'), TypeError);
 });
 
+test('makeRng pins its output sequence so the stream cannot drift', () => {
+  const rng = makeRng(42);
+  assert.deepEqual([rng(), rng(), rng()], [
+    0.6011037519201636,
+    0.44829055899754167,
+    0.8524657934904099,
+  ]);
+});
+
 test('deriveSeed is deterministic and index-sensitive', () => {
   assert.equal(deriveSeed(3817335319, 0), deriveSeed(3817335319, 0));
   assert.equal(deriveSeed(3817335319, 0), 2685912172);
@@ -175,7 +184,15 @@ test('randInt stays within inclusive bounds', () => {
 });
 
 test('randInt rejects reversed bounds', () => {
-  assert.throws(() => randInt(makeRng(1), 7, 3), RangeError);
+  assert.throws(() => randInt(makeRng(1), 7, 3), {
+    name: 'RangeError',
+    message: 'randInt bounds reversed: 7 > 3',
+  });
+});
+
+test('randInt rejects non-integer bounds', () => {
+  assert.throws(() => randInt(makeRng(1), 1.5, 3), TypeError);
+  assert.throws(() => randInt(makeRng(1), 1, 3.5), TypeError);
 });
 
 test('pick returns a member of the pool', () => {
@@ -194,11 +211,24 @@ test('pickDistinct returns distinct members and clamps to the pool size', () => 
   assert.equal(pickDistinct(makeRng(3), ['a', 'b'], 5).length, 2);
 });
 
+test('pickDistinct pins its output for a known seed', () => {
+  assert.deepEqual(pickDistinct(makeRng(3), ['a', 'b', 'c', 'd'], 3), ['c', 'b', 'a']);
+});
+
+test('pickDistinct rejects a non-integer count and accepts zero', () => {
+  assert.throws(() => pickDistinct(makeRng(1), ['a', 'b'], 1.5), TypeError);
+  assert.deepEqual(pickDistinct(makeRng(1), ['a', 'b'], 0), []);
+});
+
 test('shuffle is a permutation and does not mutate the input', () => {
   const input = ['a', 'b', 'c', 'd', 'e'];
   const out = shuffle(makeRng(7), input);
   assert.deepEqual([...out].sort(), [...input].sort());
   assert.deepEqual(input, ['a', 'b', 'c', 'd', 'e']);
+});
+
+test('shuffle pins its output for a known seed', () => {
+  assert.deepEqual(shuffle(makeRng(7), ['a', 'b', 'c', 'd', 'e']), ['d', 'b', 'c', 'e', 'a']);
 });
 
 /* ------------------------------------------------------------------ */
@@ -240,6 +270,16 @@ test('singularCandidates offers the plural ladder', () => {
   assert.equal(singularise('houses'), 'house');
   assert.equal(singularise('fishes'), 'fish');
   assert.equal(singularise('unicorns'), 'unicorn');
+});
+
+test('singularCandidates handles short plurals', () => {
+  assert.deepEqual(singularCandidates('flies'), ['flies', 'fly']);
+  assert.deepEqual(singularCandidates('goes'), ['goes', 'go', 'goe']);
+  assert.deepEqual(singularCandidates('cats'), ['cats', 'cat']);
+});
+
+test('tokeniseTheme treats digits as word characters', () => {
+  assert.deepEqual(tokeniseTheme('space2dinosaurs'), ['space2dinosaur']);
 });
 
 test('MOTIF_VOCABULARY has at least twenty motifs and covers the required set', () => {
@@ -319,8 +359,7 @@ test('validateInputs rejects an empty theme', () => {
 test('validateInputs rejects an empty name', () => {
   const result = validateInputs('space', '   ');
   assert.equal(result.ok, false);
-  assert.equal(result.errors.length, 1);
-  assert.match(result.errors[0], /name/i);
+  assert.deepEqual(result.errors, ["Enter the child's name."]);
 });
 
 test('validateInputs rejects an over-length name', () => {
@@ -339,6 +378,11 @@ test('validateInputs rejects illegal name characters', () => {
   for (const name of ['Amara2', 'Am@ra', 'Amara!', '-Amara', '123']) {
     const result = validateInputs('space', name);
     assert.equal(result.ok, false, `${JSON.stringify(name)} should be rejected`);
+    assert.deepEqual(
+      result.errors,
+      ['Name may only contain letters, spaces, hyphens and apostrophes.'],
+      `${JSON.stringify(name)} produced the wrong message`,
+    );
   }
 });
 
@@ -355,12 +399,19 @@ test('validateInputs reports every problem at once', () => {
   assert.equal(result.errors.length, 2);
 });
 
+test('the published limits are pinned', () => {
+  assert.equal(MAX_THEME_LENGTH, 60);
+  assert.equal(MAX_NAME_LENGTH, 20);
+  assert.equal(PAGE_COUNT, 5);
+});
+
 test('sanitiseFilename produces a filesystem-safe name', () => {
   assert.equal(sanitiseFilename('Amara'), 'amara.pdf');
   assert.equal(sanitiseFilename("O'Brien"), 'obrien.pdf');
   assert.equal(sanitiseFilename('Liam-James'), 'liam-james.pdf');
   assert.equal(sanitiseFilename('  Amara  '), 'amara.pdf');
   assert.equal(sanitiseFilename('Anne Marie'), 'anne-marie.pdf');
+  assert.equal(sanitiseFilename('Book 2'), 'book-2.pdf');
 });
 
 test('sanitiseFilename folds accents to their base letter', () => {
