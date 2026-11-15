@@ -7,11 +7,23 @@ This file may add rules but may not weaken them.
 
 A personalised children's colouring-book generator. The user supplies a **theme**
 (e.g. `space dinosaurs`) and a **child's name**; the app generates five distinct
-pages of black-and-white, thick-line procedural line art plus a cover carrying the
-child's name, and combines all six into one downloadable A4 PDF.
+pages of black-and-white, thick-line line art plus a cover carrying the child's
+name, and combines all six into one downloadable A4 PDF.
 
-Everything runs in the browser. No server, no network calls, no third-party
-libraries, no build step.
+Everything runs in the browser. No server, no third-party libraries.
+
+There are **two art pipelines**, selected automatically at submit time:
+
+| Mode | Trigger | Art source | Deterministic |
+| :--- | :--- | :--- | :--- |
+| **Vector** | no API key in the key field | `src/motifs.js` procedural polylines | yes, byte-identical |
+| **Image** | key present | Gemini `gemini-3.1-flash-lite-image` | no, fresh art each run |
+
+The vector pipeline is not legacy. It is the offline path and the no-key path,
+and it is what the 151 original tests pin. Do not delete it.
+
+The app also ships as **one self-contained HTML file**, `dist/colouring-book.html`,
+built by `npm run build` and opened straight from disk with no server.
 
 ## Stack
 
@@ -19,21 +31,24 @@ libraries, no build step.
 | :--- | :--- |
 | Stack profile | Web UI (HTML / CSS / JS) — `~/.vibe/STACK_MATRIX.md` row 6 |
 | Language | Vanilla ES2020 modules (`export`, `<script type="module">`) |
-| Runtime (app) | Modern browser, offline |
+| Runtime (app) | Modern browser, offline in vector mode |
 | Runtime (tests) | Node v26.12.1 — `node:test` + `node:assert/strict` |
 | Dependencies | **Zero.** No `dependencies` / `devDependencies`, no CDN, no external fonts |
-| Build step | **None.** `index.html` loads `app.js` directly |
-| Manifest | `package.json` with `"type": "module"` and a `test` script only |
+| Build step | `npm run build` -> `dist/colouring-book.html`. **Not required to run the app**; `index.html` still loads `app.js` directly |
+| Manifest | `package.json` with `"type": "module"`, `start`, `build`, `test` scripts, zero dependencies |
+| External service | Gemini image API, only when the user supplies a key |
 
 ## Canonical file list
 
 | File | Role |
 | :--- | :--- |
-| `package.json` | `type: "module"`, `test` script, zero dependencies |
-| `index.html` | Form, status, error, preview grid, download control |
+| `package.json` | `type: "module"`, `start` / `build` / `test` scripts, zero dependencies |
+| `index.html` | Form, key field, cost note, status, error, preview grid, download control |
 | `styles.css` | Layout and print-friendly presentation |
 | `app.js` | DOM controller: validate, generate, preview, download |
 | `serve.js` | Zero-dependency static server for local development (`npm start`) |
+| `build.js` | Bundler: inlines CSS and every module into `dist/colouring-book.html` |
+| `dist/colouring-book.html` | **The shipped artifact.** One file, no external refs, opens from `file://` |
 | `smoke.html` | Browser smoke-test fixture: drives the real page in an iframe |
 | `test_browser.js` | Headless Chromium smoke test (`npm run test:browser`) |
 | `src/rng.js` | `hashString` (32-bit) and `makeRng` (seeded PRNG) |
@@ -42,8 +57,9 @@ libraries, no build step.
 | `src/lettering.js` | Single-stroke vector alphabet and `layoutText` |
 | `src/page.js` | Interior page composition and SVG serialisation |
 | `src/cover.js` | Cover composition with the child's name |
-| `src/pdf.js` | Minimal PDF 1.4 writer returning `Uint8Array` |
-| `src/book.js` | Orchestrator: `(theme, name)` -> book + PDF bytes |
+| `src/imagegen.js` | Gemini image client: prompts, request, response parsing, cost |
+| `src/pdf.js` | Minimal PDF 1.4 writer returning `Uint8Array`; embeds JPEG XObjects |
+| `src/book.js` | Orchestrator: `(theme, name)` -> book + PDF bytes, vector or image |
 | `test_colouring_book.js` | The entire headless suite |
 
 ## Verification gate
@@ -57,8 +73,8 @@ npm test
 That runs two layers:
 
 ```
-node test_colouring_book.js   # 151 unit tests, no browser, ~150ms
-node test_browser.js          # 1 browser smoke test, needs Edge or Chrome, ~1.5s
+node test_colouring_book.js   # 226 unit tests, no browser, ~300ms
+node test_browser.js          # 3 browser tests, needs Edge or Chrome, ~3.3s
 ```
 
 Per-segment syntax gates use `node --check <file>`. All gates are plain CLI and
@@ -68,6 +84,10 @@ must run in Git Bash. No PowerShell cmdlets, no GUI tools, no "looks right" gate
 Running a browser per mutant would take minutes per file and buy nothing: the
 mutants are in `src/`, which the unit suite already exercises directly.
 
+**No test may call the live image API.** `src/imagegen.js` resolves `fetch` from
+`globalThis` at call time so the suite can stub it. A test that reaches the
+network would be slow, flaky, and would bill the user's key.
+
 ## Browser smoke test
 
 `test_browser.js` serves the project, loads `smoke.html` in headless Chromium,
@@ -75,6 +95,17 @@ and lets that page drive the real `index.html` in a same-origin iframe: fill the
 form, click Generate book, then report the resulting DOM back through the page
 title. It asserts six previews, six SVGs, an enabled download, the exact status
 line, the book title, and that the boot notice stayed hidden.
+
+Three scenarios run:
+
+1. **Vector** — no key. The baseline assertions, unchanged.
+2. **Image** — `?mode=image` stubs `win.fetch` inside the iframe with a
+   synthetic JPEG and sets the key field. It makes no outbound request and costs
+   nothing, but it exercises the real wiring: the key field, the async handler,
+   six image cards, the cover overlay, the cost note and the download.
+3. **Shipped file** — loads `dist/colouring-book.html` itself over `file://`,
+   because the bundle is what a user actually opens. Testing only the served
+   source would leave the artifact unproven.
 
 It exists because 147 unit tests once passed while clicking Generate book did
 nothing. Nothing in the unit suite loads a document, so nothing could see it.
@@ -101,6 +132,12 @@ Contract IDs, exact and non-negotiable:
 `#theme-input`, `#name-input`, `#generate-btn`, `#status`, `#error`, `#preview`,
 `#download-btn`, `#book-title`
 
+**Exactly eight.** A baseline test asserts the count, so new controls must not
+add ids. The image-mode controls use `data-role` instead: `data-role="api-key"`
+on the key input and `data-role="cost-note"` on the cost paragraph. The key
+input is wrapped in a `<label>` with no `for` and no `id`, so it is still
+labelled for assistive tech without touching the id count.
+
 Required attributes: each preview figure carries `data-role="page-preview"` and
 `data-page-index="<n>"`.
 
@@ -111,8 +148,11 @@ This invariant is never weakened, skipped, or broadened to make a suite pass.
 
 ## Hard constraints
 
-- Deterministic output: the same `(theme, name)` yields a byte-identical PDF.
-  No `Math.random()`, no `Date.now()`, no locale-dependent sorting in `src/`.
+- **Determinism applies to vector mode.** The same `(theme, name)` yields a
+  byte-identical PDF when no key is present. No `Math.random()`, no
+  `Date.now()`, no locale-dependent sorting in `src/`. Image mode is
+  deliberately non-deterministic: the model returns fresh art each run. Do not
+  "fix" that by caching or seeding — it is the point of the feature.
 - Pure black strokes on white, stroke width >= 4 pt at A4 scale (595.28 x 841.89 pt).
 - No `eval`, no `new Function`, no dynamic `import()` of computed paths.
 - No test may spawn a dialog or make an outbound HTTP request. The unit suite
@@ -122,23 +162,79 @@ This invariant is never weakened, skipped, or broadened to make a suite pass.
   smoke test section below.
 - `src/pdf.js` must return a `Uint8Array` and use no Node-only APIs, so the same
   code runs in the browser.
-- **The app must be served over HTTP.** A browser refuses to fetch an ES module
-  from a `file://` page because the origin is opaque, so opening `index.html`
-  from disk silently does nothing. `npm start` runs `serve.js`. `index.html`
-  carries a classic-script boot check that reveals a `.boot-error` notice when
-  `app.js` never evaluates, so this failure is never silent again. Do not
-  remove that notice or the `window.__bookBooted` signal in `app.js`.
+- **The API key is never persisted.** It lives in a password input for the
+  duration of the page and is sent only in the `x-goog-api-key` header. No
+  `localStorage`, no `sessionStorage`, no cookie, no query string, no log line.
+  A test asserts the key never appears in the generated PDF bytes.
+- **`dist/colouring-book.html` must be rebuilt and committed whenever `src/`,
+  `app.js`, `styles.css` or `index.html` changes.** A stale bundle is a shipped
+  bug: it is the file users open. `npm test` includes a test that the bundle is
+  self-contained and parses, but it cannot know the bundle is stale, so the
+  rebuild is a discipline, not a check.
+- **The app runs two ways.** `npm start` serves the source over HTTP for
+  development. `dist/colouring-book.html` opens from `file://` with no server,
+  because the bundler inlines every module into one classic script. A browser
+  refuses to fetch an ES module from a `file://` page, so the source form still
+  needs the server; `index.html` carries a classic-script boot check that
+  reveals a `.boot-error` notice when `app.js` never evaluates. Do not remove
+  that notice or the `window.__bookBooted` signal in `app.js`.
+
+## Image pipeline constraints (from the upgrade review)
+
+Binding for any work on image mode. They come from the architect's review of the
+upgrade plan, which returned `REVIEW: FAIL` and named four defects that were
+then fixed.
+
+1. **The cheapest model, and it is pinned.** `gemini-3.1-flash-lite-image`
+   (Nano Banana 2 Lite) at **$0.0336 per 1K image** — $30 per 1M image output
+   tokens, 1120 tokens per image. `gemini-nano-banana-2.1` costs the same at 1K
+   but is heavier; `gemini-3-pro-image` is $0.134, four times the price. Do not
+   "upgrade" the model without re-measuring the price, and do not add a model
+   picker: the user asked for the cheapest one.
+2. **The model returns JPEG, not PNG.** `parseImageResponse` reads
+   `candidates[0].content.parts[]` for the part carrying `inlineData`, and the
+   bytes are embedded as a `/DCTDecode` XObject untouched. Re-encoding them
+   would cost quality and CPU for nothing.
+3. **`jpegSize` walks segment lengths.** A JPEG with an EXIF thumbnail contains
+   a second SOF0 inside the thumbnail, so scanning for the first `0xFFC0` reads
+   the wrong dimensions. Walk the segment chain instead.
+4. **Wrap the image in `q`/`Q`.** `cm` mutates the CTM, and without the save and
+   restore every later operator on the page inherits the image transform.
+5. **The XObject dict is complete.** `/ColorSpace` is derived from the SOF
+   component count (1 = `/DeviceGray`, 3 = `/RGB`), not assumed.
+6. **`stroke: false` means fill-only.** The white band behind the cover name
+   must emit `f`, not `B`, or it gets a black outline and the name sits in a
+   box.
+7. **One `fitImageRect`, shared.** The PDF placement and the preview placement
+   come from the same function, so what the user sees is what prints.
+8. **The cover name stays vector.** Image models misspell names, so the cover is
+   a generated image with a white band across the top and the name drawn from
+   `src/lettering.js`. `buildCoverPrompt` reserves the top third of the frame so
+   the band never covers the art.
+9. **Object numbers are allocated dynamically.** `buildPdf` numbers objects as
+   it goes. A vector-only book must still produce the original numbering
+   (catalog 1, pages 2, page/content pairs, then images, then info) — a baseline
+   test pins it.
+10. **The bundler is not a general-purpose bundler.** `build.js` inlines the ten
+    modules in dependency order, emits `'use strict'`, escapes `</script>`, and
+    strips the `file://` boot script. It handles this project's import graph and
+    nothing else. Do not grow it into a tool.
 
 ## Status
 
+- **Upgrade complete: image mode and the downloadable single file are shipped.**
+- Baseline before the upgrade: `d846283`, 151 unit tests + 1 browser test.
+- Gate: `npm test` -> 226 unit tests + 3 browser tests, 0 failures, 0 skipped.
+- Landed in the upgrade: `src/imagegen.js`, `build.js`,
+  `dist/colouring-book.html`; modified `src/pdf.js`, `src/book.js`,
+  `src/page.js`, `index.html`, `app.js`, `styles.css`, `package.json`,
+  `.gitignore`, `test_colouring_book.js`, `smoke.html`, `test_browser.js`.
+- The vector pipeline is retained as the no-key path. Deleting it would break
+  the offline promise and 151 baseline tests.
+- Evidence trail: `plans/upgrade_brief.md`, `plans/upgrade_plan.md`,
+  `plans/upgrade_review.md`, `plans/stage6_scan.md`, `plans/mutation_report.md`.
 - **Phase 3 complete. All three roadmap phases are done; the project is ship-ready.**
 - Roadmap: `plans/MASTER_ROADMAP.md` (3 phases x 3 segments).
-- Gate: `npm test` -> 151 unit tests + 1 browser smoke test, 454 assertions,
-  0 failures, 0 skipped.
-- Landed: `package.json`, `src/rng.js`, `src/themes.js`, `src/motifs.js`,
-  `src/lettering.js`, `src/page.js`, `src/cover.js`, `src/pdf.js`, `src/book.js`,
-  `index.html`, `styles.css`, `app.js`, `test_colouring_book.js`,
-  `.gitattributes`, `README.md`.
 - Pre-ship security audit: `AUDIT: PASS` (`plans/security_audit.md`). The first
   pass returned `AUDIT: FAIL` and found four real defects, all fixed: a
   prototype-chain lookup in `motifsForTheme` that crashed on the theme

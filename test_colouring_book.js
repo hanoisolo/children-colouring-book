@@ -2470,6 +2470,32 @@ test('generateImageBook asks for the cover first, then one prompt per page', asy
   }
 });
 
+test('the API key never reaches the PDF, the book, or the filename', async () => {
+  const key = 'fake-key-for-the-leak-test-0123456789';
+  const fetchImpl = fakeFetch(() => imageResponseFor(makeJpeg()));
+  const book = await generateImageBook({
+    theme: 'space dinosaurs',
+    name: 'Amara',
+    apiKey: key,
+    fetchImpl,
+  });
+
+  const pdfText = new TextDecoder('latin1').decode(book.pdfBytes);
+  assert.ok(!pdfText.includes(key), 'the key leaked into the PDF bytes');
+  assert.ok(!pdfText.includes('x-goog-api-key'), 'the request header leaked into the PDF');
+
+  const serialised = JSON.stringify(book, (name, value) =>
+    value instanceof Uint8Array ? undefined : value,
+  );
+  assert.ok(!serialised.includes(key), 'the key leaked into the book object');
+  assert.ok(!book.filename.includes(key), 'the key leaked into the filename');
+
+  for (const call of fetchImpl.calls) {
+    assert.ok(!call.url.includes(key), 'the key leaked into the request URL');
+    assert.equal(call.options.headers['x-goog-api-key'], key);
+  }
+});
+
 test('the cover draws the name as vector strokes over a white band', async () => {
   const jpeg = makeJpeg({ width: 896, height: 1200 });
   const fetchImpl = fakeFetch(() => imageResponseFor(jpeg));
