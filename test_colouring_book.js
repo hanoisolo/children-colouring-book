@@ -55,6 +55,8 @@ import {
   pdfTextString,
   pageContentStream,
   buildPdf,
+  fitImageRect,
+  jpegSize,
 } from './src/pdf.js';
 
 import {
@@ -805,6 +807,8 @@ test('every export in src/pdf.js is imported by this suite', () => {
     'MIN_STROKE_WIDTH',
     'PDF_VERSION',
     'buildPdf',
+    'fitImageRect',
+    'jpegSize',
     'pageContentStream',
     'pdfTextString',
   ];
@@ -2150,4 +2154,230 @@ test('generateImages rejects an empty prompt list', async () => {
     () => generateImages({ apiKey: 'k', prompts: [] }),
     /non-empty array/,
   );
+});
+
+/* ------------------------------------------------------------------ */
+/* PDF raster embedding                                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Build a minimal but structurally real JPEG: SOI, an optional APP1 carrying a
+ * nested frame header, the real SOF0, a start-of-scan and EOI. `jpegSize` only
+ * needs the markers, so this is enough to exercise the parser without shipping a
+ * binary fixture.
+ */
+function makeJpeg({ width = 8, height = 6, components = 3, exifThumbnail = null } = {}) {
+  const bytes = [0xff, 0xd8];
+
+  if (exifThumbnail) {
+    const payload = [0x45, 0x78, 0x69, 0x66, 0x00, 0x00, ...exifThumbnail];
+    const length = payload.length + 2;
+    bytes.push(0xff, 0xe1, (length >> 8) & 0xff, length & 0xff, ...payload);
+  }
+
+  const sofLength = 8 + 3 * components;
+  bytes.push(
+    0xff, 0xc0,
+    (sofLength >> 8) & 0xff, sofLength & 0xff,
+    8,
+    (height >> 8) & 0xff, height & 0xff,
+    (width >> 8) & 0xff, width & 0xff,
+    components,
+  );
+  for (let i = 0; i < components; i += 1) {
+    bytes.push(1, 0x11, 0);
+  }
+
+  bytes.push(0xff, 0xda, 0x00, 0x02);
+  bytes.push(0xff, 0xd9);
+  return new Uint8Array(bytes);
+}
+
+test('jpegSize reads the frame dimensions', () => {
+  assert.deepEqual(
+    jpegSize(makeJpeg({ width: 896, height: 1200 })),
+    { width: 896, height: 1200, components: 3 },
+  );
+});
+
+test('jpegSize reports a greyscale frame', () => {
+  assert.equal(jpegSize(makeJpeg({ components: 1 })).components, 1);
+});
+
+test('jpegSize ignores an EXIF thumbnail frame', () => {
+  const thumbnail = [0xff, 0xc0, 0x00, 0x0b, 8, 0x00, 0x01, 0x00, 0x01, 1, 1, 0x11, 0];
+  const bytes = makeJpeg({ width: 40, height: 30, exifThumbnail: thumbnail });
+  assert.deepEqual(jpegSize(bytes), { width: 40, height: 30, components: 3 });
+});
+
+test('jpegSize rejects a non-JPEG', () => {
+  assert.throws(() => jpegSize(new Uint8Array([0x89, 0x50, 0x4e, 0x47])), /not a JPEG/);
+  assert.throws(() => jpegSize('nope'), /Uint8Array/);
+});
+
+test('jpegSize rejects a JPEG with no frame header', () => {
+  assert.throws(() => jpegSize(new Uint8Array([0xff, 0xd8, 0xff, 0xd9])), /no start-of-frame/);
+});
+
+test('fitImageRect centres a 3:4 image on A4 without distortion', () => {
+  const rect = fitImageRect(896, 1200);
+  assert.equal(rect.w, 595.28);
+  assert.ok(Math.abs(rect.h - 1200 * (595.28 / 896)) < 1e-9, `height was ${rect.h}`);
+  assert.equal(rect.x, 0);
+  assert.ok(rect.y > 0, 'a 3:4 image should letterbox vertically on A4');
+  assert.ok(Math.abs(rect.y - (841.89 - rect.h) / 2) < 1e-9);
+});
+
+test('fitImageRect letterboxes a wide image', () => {
+  const rect = fitImageRect(1200, 600);
+  assert.equal(rect.w, 595.28);
+  assert.ok(rect.h < 841.89);
+  assert.equal(rect.x, 0);
+  assert.ok(rect.y > 0);
+});
+
+test('fitImageRect pillarboxes a tall image', () => {
+  const rect = fitImageRect(600, 1200);
+  assert.equal(rect.h, 841.89);
+  assert.ok(rect.w < 595.28);
+  assert.ok(rect.x > 0);
+  assert.equal(rect.y, 0);
+});
+
+test('fitImageRect rejects nonsense dimensions', () => {
+  assert.throws(() => fitImageRect(0, 10), /positive image dimensions/);
+  assert.throws(() => fitImageRect(10, -1), /positive image dimensions/);
+  assert.throws(() => fitImageRect('a', 10), /positive image dimensions/);
+});
+
+test('buildPdf embeds a JPEG as a DCTDecode XObject', () => {
+  const jpeg = makeJpeg({ width: 896, height: 1200 });
+  const text = pdfText(buildPdf([{ polylines: [], image: { bytes: jpeg } }], { title: 'Test' }));
+  assert.ok(text.includes('/Subtype /Image'), 'no image XObject');
+  assert.ok(text.includes('/Filter /DCTDecode'), 'the image is not DCTDecode');
+  assert.ok(text.includes('/Width 896 /Height 1200'), 'the frame dimensions are wrong');
+  assert.ok(text.includes('/ColorSpace /DeviceRGB'), 'the colour space is wrong');
+  assert.ok(text.includes('/BitsPerComponent 8'), 'the bit depth is missing');
+  assert.ok(text.includes('/XObject << /Im0 5 0 R >>'), 'the page does not reference the image');
+});
+
+test('buildPdf uses DeviceGray for a one-component JPEG', () => {
+  const jpeg = makeJpeg({ components: 1 });
+  const text = pdfText(buildPdf([{ polylines: [], image: { bytes: jpeg } }], { title: 'Test' }));
+  assert.ok(text.includes('/ColorSpace /DeviceGray'));
+});
+
+test('the image stream length matches its declared /Length', () => {
+  const jpeg = makeJpeg({ width: 16, height: 12 });
+  const text = pdfText(buildPdf([{ polylines: [], image: { bytes: jpeg } }], { title: 'Test' }));
+  const match = /\/Filter \/DCTDecode \/Length (\d+) >>\nstream\n/.exec(text);
+  assert.ok(match, 'no image stream was emitted');
+  assert.equal(Number(match[1]), jpeg.length);
+});
+
+test('buildPdf allocates image objects after the page tree', () => {
+  const jpeg = makeJpeg();
+  const pages = [
+    { polylines: [], image: { bytes: jpeg } },
+    { polylines: [] },
+    { polylines: [], image: { bytes: jpeg } },
+  ];
+  const text = pdfText(buildPdf(pages, { title: 'Test' }));
+  assert.ok(text.includes('/Kids [3 0 R 5 0 R 7 0 R]'), 'the page tree moved');
+  assert.ok(text.includes('/Contents 4 0 R'));
+  assert.ok(text.includes('/Contents 6 0 R'));
+  assert.ok(text.includes('/Contents 8 0 R'));
+  assert.ok(text.includes('/Im0 9 0 R'), 'the first image is not object 9');
+  assert.ok(text.includes('/Im0 10 0 R'), 'the second image is not object 10');
+  assert.ok(text.includes('/Size 12 /Root 1 0 R /Info 11 0 R'), 'the trailer is wrong');
+});
+
+test('a vector-only book keeps the original object numbering', () => {
+  const pages = samplePages();
+  const text = pdfText(buildPdf(pages, { title: 'Test' }));
+  const infoNumber = 2 * pages.length + 3;
+  assert.ok(text.includes(`/Info ${infoNumber} 0 R`), 'the info object moved');
+  assert.ok(text.includes(`/Size ${infoNumber + 1}`), 'the size moved');
+});
+
+test('every xref offset still lands on its object header with images present', () => {
+  const jpeg = makeJpeg();
+  const pages = [
+    { polylines: [], image: { bytes: jpeg } },
+    { polylines: [{ points: [[10, 20], [30, 40]], closed: false, fill: false, width: 4 }] },
+  ];
+  const text = pdfText(buildPdf(pages, { title: 'Test' }));
+  const startxref = Number(/startxref\n(\d+)\n%%EOF/.exec(text)[1]);
+  const rows = [...text.slice(startxref).matchAll(/^(\d{10}) (\d{5}) ([nf]) $/gm)];
+  assert.ok(rows.length > 0, 'no xref rows');
+  rows.forEach((row, index) => {
+    if (row[3] === 'f') {
+      return;
+    }
+    const offset = Number(row[1]);
+    assert.ok(
+      text.startsWith(`${index} 0 obj`, offset),
+      `xref row ${index} points at ${JSON.stringify(text.slice(offset, offset + 12))}`,
+    );
+  });
+});
+
+test('pageContentStream wraps the image in q/Q so the CTM does not leak', () => {
+  const stream = pageContentStream({
+    polylines: [{ points: [[10, 20], [30, 40]], closed: false, fill: false, width: 4 }],
+    image: { rect: { x: 0, y: 22, w: 595.28, h: 797 } },
+    width: 595.28,
+    height: 841.89,
+  });
+  const open = stream.indexOf('\nq\n');
+  const draw = stream.indexOf('/Im0 Do');
+  const close = stream.indexOf('\nQ\n');
+  assert.ok(open >= 0, 'the image was not wrapped in q');
+  assert.ok(draw > open, 'the image is drawn before q');
+  assert.ok(close > draw, 'the image was not wrapped in Q');
+  assert.ok(stream.indexOf('10 821.89 m') > close, 'the polyline was drawn inside the image matrix');
+});
+
+test('pageContentStream places the image with a cm matrix', () => {
+  const stream = pageContentStream({
+    polylines: [],
+    image: { rect: { x: 0, y: 22.29, w: 595.28, h: 797.3 } },
+    width: 595.28,
+    height: 841.89,
+  });
+  assert.ok(stream.includes('595.28 0 0 797.3 0 22.3 cm'), stream);
+});
+
+test('pageContentStream derives a rect when the page supplies none', () => {
+  const stream = pageContentStream({
+    polylines: [],
+    image: { width: 896, height: 1200 },
+    width: 595.28,
+    height: 841.89,
+  });
+  assert.ok(stream.includes('595.28 0 0 797.25 0 22.32 cm'), stream);
+});
+
+test('pageContentStream emits f for a fill with no stroke', () => {
+  const band = {
+    points: [[0, 0], [100, 0], [100, 50], [0, 50]],
+    closed: true,
+    fill: true,
+    stroke: false,
+    width: 4,
+  };
+  const stream = pageContentStream({ polylines: [band], width: 595.28, height: 841.89 });
+  assert.ok(/\nh\nf$/.test(stream), 'a fill-only path did not emit f');
+  assert.ok(!/\nB$/.test(stream), 'a fill-only path emitted B');
+});
+
+test('pageContentStream still emits B when stroke is not disabled', () => {
+  const band = {
+    points: [[0, 0], [100, 0], [100, 50], [0, 50]],
+    closed: true,
+    fill: true,
+    width: 4,
+  };
+  const stream = pageContentStream({ polylines: [band], width: 595.28, height: 841.89 });
+  assert.ok(/\nh\nB$/.test(stream));
 });
