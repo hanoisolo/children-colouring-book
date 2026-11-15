@@ -32,6 +32,11 @@
           autocomplete="off"
           required>
         <p class="hint">Try &ldquo;space dinosaurs&rdquo;, &ldquo;under the sea&rdquo;, or &ldquo;fairy garden&rdquo;.</p>
+        <p class="hint">
+          With a key, the theme is sent to Gemini to draw the pictures. Keep it to
+          the subject &mdash; don&rsquo;t type the child&rsquo;s name or anything personal here.
+        </p>
+        <p data-role="theme-note" class="theme-note" hidden></p>
       </div>
 
       <div class="field">
@@ -70,6 +75,14 @@
     <p data-role="cost-note" class="cost-note"></p>
     <p id="status" class="status" aria-live="polite"></p>
     <p id="error" class="error" role="alert"></p>
+
+    <div data-role="partial-actions" class="partial-actions" hidden>
+      <p data-role="partial-note" class="partial-note" aria-live="polite"></p>
+      <div class="partial-buttons">
+        <button data-role="retry-btn" type="button">Retry the missing pictures</button>
+        <button data-role="vector-btn" type="button">Use offline vector art instead</button>
+      </div>
+    </div>
 
     <section class="book" aria-labelledby="book-title">
       <h2 id="book-title">Your book</h2>

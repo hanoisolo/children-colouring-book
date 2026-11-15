@@ -24,7 +24,6 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { createStaticServer } from './serve.js';
-import { build } from './build.js';
 
 const BROWSERS = [
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
@@ -129,6 +128,10 @@ test('the real page generates a book in a browser', async () => {
     assert.equal(report.downloadDisabled, false, 'the download button stayed disabled');
     assert.equal(report.bookTitle, "Amara's colouring book", 'the book title was not written');
     assert.equal(report.bootNoticeHidden, true, 'the boot-error notice fired even though the module loaded');
+    // The offline promise is that vector mode touches the network zero times.
+    // smoke.html installs a counting fetch in this mode too, so this is a real
+    // measurement rather than a constant.
+    assert.equal(report.fetchCalls, 0, 'vector mode made a network request');
   } finally {
     rmSync(profileDir, { recursive: true, force: true });
   }
@@ -169,7 +172,11 @@ test('the built single file works from disk with no server', async () => {
   const browser = findBrowser();
   assert.ok(browser, 'no Chromium browser found.');
 
-  build();
+  // Deliberately no build() here. This test exists to prove the file a user
+  // actually opens works, so it must read the committed artifact. Rebuilding
+  // first would test a fresh bundle and leave a stale committed one unproven —
+  // which is exactly the gap this test used to have. The unit suite's
+  // freshness test is what keeps the committed file honest.
   const built = readFileSync(resolve('dist/colouring-book.html'), 'utf8');
 
   const harness = `

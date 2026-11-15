@@ -53,9 +53,10 @@ npm run build
 
 `build.js` inlines the stylesheet and all ten modules into one classic script.
 It is not a general-purpose bundler; it handles this project's import graph and
-nothing else. **The rebuild is a discipline, not a check** — no test can tell
-that `dist/colouring-book.html` is stale, so a change to `src/` without a
-rebuild ships a stale app.
+nothing else. **The rebuild is checked, not trusted** — `npm test` includes a
+test that compares `dist/colouring-book.html` byte-for-byte against a fresh
+build, so a change to `src/` without a rebuild fails the gate instead of
+shipping a stale app.
 
 **Cutting a release.** The download link above resolves to the newest release's
 `colouring-book.html` asset, so a release is what publishes a new version:
@@ -70,6 +71,17 @@ git push
 Then create a release tagged `vX.Y.Z` with `dist/colouring-book.html` attached
 as an asset. The asset must be the rebuilt file, not a copy from an earlier
 release — the whole point of the link is that it serves what is on `master`.
+
+`scripts/release.sh` automates the checks around that:
+
+```
+scripts/release.sh            # clean tree on master, full gate, prints the sha256
+scripts/release.sh --verify   # downloads the published asset and compares hashes
+```
+
+Run `--verify` after uploading. It is the only step that proves the download
+link and `master` agree; without it a hotfix can leave the link serving the
+previous bundle while every test stays green.
 
 ## Two ways to draw the art
 

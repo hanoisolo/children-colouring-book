@@ -11,9 +11,10 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 
 import {
   build,
@@ -64,8 +65,10 @@ import {
   costNoteText,
   drawingStatusText,
   hasApiKey,
+  partialFailureText,
   readyStatusText,
   submitUiState,
+  themeNoteText,
 } from './src/book.js';
 
 import {
@@ -86,8 +89,11 @@ import {
   IMAGE_ENDPOINT,
   IMAGE_MAX_ATTEMPTS,
   IMAGE_MODEL,
+  IMAGE_PRICE_PER_MTOKENS,
+  IMAGE_PRICE_SOURCE,
   IMAGE_PRICE_USD,
   IMAGE_SIZE,
+  IMAGE_TOKENS_PER_IMAGE,
   LINE_ART_STYLE,
   base64ToBytes,
   buildCoverPrompt,
@@ -95,6 +101,7 @@ import {
   buildPagePrompt,
   estimateImageCost,
   generateImages,
+  generateImagesSettled,
   imageErrorForStatus,
   parseImageResponse,
   requestImage,
@@ -154,6 +161,29 @@ import {
 } from './src/cover.js';
 
 const readSource = (relative) => readFileSync(new URL(relative, import.meta.url), 'utf8');
+
+/**
+ * Build the single file into a throwaway directory.
+ *
+ * Tests must not write `dist/colouring-book.html`. When they did, the suite
+ * regenerated the very artifact it was supposed to be verifying, so a stale
+ * committed bundle could never fail anything: editing `src/` and running the
+ * tests left `dist/` silently modified and the suite green. Building to a temp
+ * path keeps the committed file untouched, which is what makes the freshness
+ * test below able to see a stale one.
+ *
+ * @returns {{ html: string, modules: number }}
+ */
+function buildToTemp() {
+  const dir = mkdtempSync(join(tmpdir(), 'colouring-book-build-'));
+  try {
+    const out = join(dir, 'colouring-book.html');
+    const result = build({ out });
+    return { html: readFileSync(out, 'utf8'), modules: result.modules };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 const CONTRACT_IDS = [
   'theme-input',
@@ -817,10 +847,12 @@ test('every export in src/book.js is imported by this suite', () => {
     'generateBook',
     'generateImageBook',
     'hasApiKey',
+    'partialFailureText',
     'planBookPages',
     'readyStatusText',
     'sanitiseFilename',
     'submitUiState',
+    'themeNoteText',
     'validateInputs',
   ];
   assert.deepEqual(extractExports(readSource('./src/book.js')), expected);
@@ -933,8 +965,11 @@ test('every export in src/imagegen.js is imported by this suite', () => {
     'IMAGE_ENDPOINT',
     'IMAGE_MAX_ATTEMPTS',
     'IMAGE_MODEL',
+    'IMAGE_PRICE_PER_MTOKENS',
+    'IMAGE_PRICE_SOURCE',
     'IMAGE_PRICE_USD',
     'IMAGE_SIZE',
+    'IMAGE_TOKENS_PER_IMAGE',
     'LINE_ART_STYLE',
     'base64ToBytes',
     'buildCoverPrompt',
@@ -942,6 +977,7 @@ test('every export in src/imagegen.js is imported by this suite', () => {
     'buildPagePrompt',
     'estimateImageCost',
     'generateImages',
+    'generateImagesSettled',
     'imageErrorForStatus',
     'parseImageResponse',
     'requestImage',
@@ -1899,6 +1935,24 @@ test('the image model is the cheapest nano-banana model', () => {
   assert.match(IMAGE_ENDPOINT, /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models$/);
 });
 
+test('the quoted price is derived from the published rate, not typed twice', () => {
+  // The UI quotes a cost before the user spends anything. If the quote and the
+  // rate drift apart, the app lies about money, so the derivation is pinned
+  // rather than the literal.
+  assert.equal(IMAGE_TOKENS_PER_IMAGE, 1120);
+  assert.equal(IMAGE_PRICE_PER_MTOKENS, 30);
+  assert.equal(
+    IMAGE_PRICE_USD,
+    (IMAGE_TOKENS_PER_IMAGE / 1_000_000) * IMAGE_PRICE_PER_MTOKENS,
+  );
+  assert.equal(Number(IMAGE_PRICE_USD.toFixed(4)), 0.0336);
+});
+
+test('the price carries a dated source', () => {
+  assert.match(IMAGE_PRICE_SOURCE, /^https:\/\//, 'the price has no source URL');
+  assert.match(IMAGE_PRICE_SOURCE, /read \d{4}-\d{2}-\d{2}/, 'the price source is undated');
+});
+
 test('estimateImageCost prices a six-page book', () => {
   assert.equal(estimateImageCost(6), 6 * 0.0336);
   assert.equal(estimateImageCost(1), 0.0336);
@@ -1916,37 +1970,86 @@ test('the style clause forbids everything that ruins a colouring page', () => {
 test('buildPagePrompt names the theme, the motifs and the page', () => {
   const prompt = buildPagePrompt({
     theme: 'space dinosaurs',
-    name: 'Amara',
     pageIndex: 2,
     motifs: ['rocket', 'star'],
   });
   assert.match(prompt, /Theme: space dinosaurs\./);
   assert.match(prompt, /Draw: rocket, star\./);
-  assert.match(prompt, /page 3 of a book for Amara/);
+  assert.match(prompt, /page 3 of the book/);
   assert.match(prompt, /No shading, no grey, no colour, no text/);
 });
 
 test('buildPagePrompt is deterministic', () => {
-  const input = { theme: 'space dinosaurs', name: 'Amara', pageIndex: 0, motifs: ['star'] };
+  const input = { theme: 'space dinosaurs', pageIndex: 0, motifs: ['star'] };
   assert.equal(buildPagePrompt(input), buildPagePrompt(input));
 });
 
 test('buildPagePrompt falls back when no motifs are given', () => {
   assert.match(
-    buildPagePrompt({ theme: 'x', name: 'y', pageIndex: 0, motifs: [] }),
+    buildPagePrompt({ theme: 'x', pageIndex: 0, motifs: [] }),
     /Draw: a cheerful scene\./,
   );
   assert.match(
-    buildPagePrompt({ theme: 'x', name: 'y', pageIndex: 0 }),
+    buildPagePrompt({ theme: 'x', pageIndex: 0 }),
     /Draw: a cheerful scene\./,
   );
 });
 
-test('buildCoverPrompt reserves the top third and forbids the name', () => {
-  const prompt = buildCoverPrompt({ theme: 'under the sea', name: 'Zo\u00eb' });
+test('buildCoverPrompt reserves the top third and forbids all text', () => {
+  const prompt = buildCoverPrompt({ theme: 'under the sea' });
   assert.match(prompt, /lower two thirds/);
   assert.match(prompt, /top third completely empty white space/);
-  assert.match(prompt, /Do not write the name Zo\u00eb or any other text/);
+  assert.match(prompt, /Do not write any text, lettering, words or numbers/);
+});
+
+test('the prompt builders take no name argument at all', () => {
+  // Structural, not behavioural: the child's name cannot leak into a prompt if
+  // there is no parameter to pass it through. A name handed in anyway is
+  // ignored rather than interpolated.
+  const page = buildPagePrompt({
+    theme: 'space dinosaurs',
+    name: 'Xqzzy',
+    pageIndex: 0,
+    motifs: ['star'],
+  });
+  const cover = buildCoverPrompt({ theme: 'space dinosaurs', name: 'Xqzzy' });
+  assert.ok(!page.includes('Xqzzy'), 'the page prompt interpolated a name');
+  assert.ok(!cover.includes('Xqzzy'), 'the cover prompt interpolated a name');
+});
+
+test('the child\'s name never reaches the image service', async () => {
+  // The canary is distinctive enough that a substring hit cannot be a
+  // coincidence, and the accented forms catch a normalisation that folds
+  // `Zoë` to `Zoe` before sending.
+  for (const name of ['Xqzzy', 'Zo\u00eb', 'Jos\u00e9']) {
+    const fetchImpl = fakeFetch(() => imageResponseFor(makeJpeg()));
+    await generateImageBook({ theme: 'space dinosaurs', name, apiKey: 'k', fetchImpl });
+
+    const variants = new Set([
+      name,
+      name.toLowerCase(),
+      name.toUpperCase(),
+      name.normalize('NFD'),
+      name.normalize('NFD').replace(/[\u0300-\u036f]/g, ''),
+    ]);
+
+    assert.equal(fetchImpl.calls.length, 6, 'the book did not make six requests');
+    for (const { url, options } of fetchImpl.calls) {
+      const haystacks = {
+        url,
+        headers: JSON.stringify(options.headers),
+        body: options.body,
+      };
+      for (const [where, haystack] of Object.entries(haystacks)) {
+        for (const variant of variants) {
+          assert.ok(
+            !haystack.includes(variant),
+            `the name ${JSON.stringify(name)} reached the ${where} as ${JSON.stringify(variant)}`,
+          );
+        }
+      }
+    }
+  }
 });
 
 test('buildImageRequest targets the model endpoint with image modalities', () => {
@@ -2208,6 +2311,172 @@ test('generateImages rejects an empty prompt list', async () => {
     () => generateImages({ apiKey: 'k', prompts: [] }),
     /non-empty array/,
   );
+});
+
+test('generateImagesSettled keeps the successes when one slot fails', async () => {
+  const fetchImpl = fakeFetch((url, options) => {
+    const text = JSON.parse(options.body).contents[0].parts[0].text;
+    return text === 'two'
+      ? jsonResponse({ error: { message: 'boom' } }, 500)
+      : imageResponseFor(makeJpeg());
+  });
+  const { images, errors } = await generateImagesSettled({
+    apiKey: 'k',
+    prompts: ['one', 'two', 'three'],
+    fetchImpl,
+    concurrency: 2,
+  });
+
+  assert.equal(images.length, 3);
+  assert.ok(images[0], 'the first image was lost');
+  assert.equal(images[1], null, 'the failed slot was not nulled');
+  assert.ok(images[2], 'the third image was lost');
+  assert.equal(errors[0], null);
+  assert.match(errors[1].message, /unavailable \(500\)/);
+  assert.equal(errors[2], null);
+});
+
+test('generateImagesSettled still propagates an abort', async () => {
+  const abort = new Error('aborted');
+  abort.name = 'AbortError';
+  const fetchImpl = async () => { throw abort; };
+  await assert.rejects(
+    () => generateImagesSettled({ apiKey: 'k', prompts: ['a', 'b'], fetchImpl }),
+    /aborted/,
+  );
+});
+
+test('generateImagesSettled rejects an empty prompt list', async () => {
+  await assert.rejects(
+    () => generateImagesSettled({ apiKey: 'k', prompts: [] }),
+    /non-empty array/,
+  );
+});
+
+test('generateImageBook returns a partial result instead of discarding paid images', async () => {
+  // Page 2 fails hard. The cover and the other four pages were billed, so they
+  // must come back rather than being thrown away with the error.
+  const fetchImpl = fakeFetch((url, options) => {
+    const text = JSON.parse(options.body).contents[0].parts[0].text;
+    return text.includes('page 2 of the book')
+      ? jsonResponse({ error: { message: 'boom' } }, 500)
+      : imageResponseFor(makeJpeg());
+  });
+
+  const partial = await generateImageBook({
+    theme: 'space dinosaurs',
+    name: 'Amara',
+    apiKey: 'k',
+    fetchImpl,
+  });
+
+  assert.equal(partial.complete, false, 'a partial book claimed to be complete');
+  assert.equal(partial.succeeded, 5);
+  assert.equal(partial.total, 6);
+  assert.equal(partial.pdfBytes, undefined, 'a partial book emitted a PDF');
+  assert.equal(partial.failures.length, 1);
+  assert.equal(partial.failures[0].label, 'Page 2');
+  assert.match(partial.failures[0].message, /unavailable \(500\)/);
+  assert.equal(partial.images.filter(Boolean).length, 5);
+  assert.equal(partial.costUsd, estimateImageCost(5), 'the cost did not follow the successes');
+});
+
+test('generateImageBook still throws when every image fails', async () => {
+  const fetchImpl = fakeFetch(() => jsonResponse({ error: { message: 'bad key' } }, 401));
+  await assert.rejects(
+    () => generateImageBook({ theme: 'x', name: 'Amara', apiKey: 'k', fetchImpl }),
+    /API key was rejected \(401\)/,
+  );
+});
+
+test('generateImageBook resume requests only the missing slots', async () => {
+  const failing = fakeFetch((url, options) => {
+    const text = JSON.parse(options.body).contents[0].parts[0].text;
+    return text.includes('page 2 of the book')
+      ? jsonResponse({ error: { message: 'boom' } }, 500)
+      : imageResponseFor(makeJpeg());
+  });
+  const partial = await generateImageBook({
+    theme: 'space dinosaurs',
+    name: 'Amara',
+    apiKey: 'k',
+    fetchImpl: failing,
+  });
+
+  const retry = fakeFetch(() => imageResponseFor(makeJpeg()));
+  const book = await generateImageBook({
+    theme: 'space dinosaurs',
+    name: 'Amara',
+    apiKey: 'k',
+    fetchImpl: retry,
+    resume: partial,
+  });
+
+  assert.equal(retry.calls.length, 1, 'the retry re-billed an image the user already owned');
+  const retried = JSON.parse(retry.calls[0].options.body).contents[0].parts[0].text;
+  assert.match(retried, /page 2 of the book/, 'the retry asked for the wrong slot');
+  assert.equal(book.complete, true);
+  assert.equal(book.pages.length, 5);
+  assert.ok(book.pdfBytes instanceof Uint8Array);
+});
+
+test('generateImageBook refuses to resume a different book', async () => {
+  const fetchImpl = fakeFetch((url, options) => {
+    const text = JSON.parse(options.body).contents[0].parts[0].text;
+    return text.includes('page 2 of the book')
+      ? jsonResponse({ error: { message: 'boom' } }, 500)
+      : imageResponseFor(makeJpeg());
+  });
+  const partial = await generateImageBook({
+    theme: 'space dinosaurs',
+    name: 'Amara',
+    apiKey: 'k',
+    fetchImpl,
+  });
+
+  await assert.rejects(
+    () => generateImageBook({
+      theme: 'under the sea',
+      name: 'Amara',
+      apiKey: 'k',
+      fetchImpl,
+      resume: partial,
+    }),
+    /different theme or name/,
+  );
+  await assert.rejects(
+    () => generateImageBook({
+      theme: 'space dinosaurs',
+      name: 'Amara',
+      apiKey: 'k',
+      fetchImpl,
+      resume: { ...partial, images: [partial.images[0]] },
+    }),
+    /different shape/,
+  );
+});
+
+test('generateBook reports whether the theme matched a motif', () => {
+  assert.equal(generateBook('space dinosaurs', 'Amara').matched, true);
+  assert.equal(generateBook('unicorns and zeppelins', 'Amara').matched, false);
+});
+
+test('themeNoteText stays silent when the theme matched', () => {
+  assert.equal(themeNoteText(true, 'space dinosaurs'), '');
+});
+
+test('themeNoteText names the theme and suggests a simpler one', () => {
+  const note = themeNoteText(false, 'dinosuar');
+  assert.match(note, /No motifs matched "dinosuar"/);
+  assert.match(note, /general set/);
+  assert.match(note, /space dinosaurs/);
+});
+
+test('partialFailureText names the count, the retry cost and the free alternative', () => {
+  const text = partialFailureText({ succeeded: 3, total: 6 });
+  assert.match(text, /^3 of 6 pictures were drawn\./);
+  assert.match(text, /Retry the missing 3 \(about \$0\.10\)/);
+  assert.match(text, /offline vector book/);
 });
 
 /* ------------------------------------------------------------------ */
@@ -2502,7 +2771,7 @@ test('generateImageBook asks for the cover first, then one prompt per page', asy
   assert.equal(prompts.length, 6);
   assert.match(prompts[0], /This is the cover of a colouring book/);
   for (let index = 1; index < prompts.length; index += 1) {
-    assert.match(prompts[index], new RegExp(`page ${index} of a book for Amara`));
+    assert.match(prompts[index], new RegExp(`page ${index} of the book`));
   }
 });
 
@@ -2859,10 +3128,8 @@ test('bundleHtml escapes a closing script tag inside the bundle', () => {
 });
 
 test('the built file is self-contained and parses', () => {
-  const result = build();
-  assert.ok(result.modules >= 10, `only ${result.modules} modules were bundled`);
-
-  const out = readSource('./dist/colouring-book.html');
+  const { html: out, modules } = buildToTemp();
+  assert.ok(modules >= 10, `only ${modules} modules were bundled`);
   assert.ok(out.length > 50000, 'the build is suspiciously small');
   assert.ok(!/^import\s/m.test(out), 'an import survived into the build');
   assert.ok(!/^export\s/m.test(out), 'an export survived into the build');
@@ -2879,10 +3146,43 @@ test('the built file is self-contained and parses', () => {
 });
 
 test('the build is deterministic', () => {
-  const first = readSource('./dist/colouring-book.html');
-  build();
-  const second = readSource('./dist/colouring-book.html');
+  const first = buildToTemp().html;
+  const second = buildToTemp().html;
   assert.equal(first, second, 'two builds produced different bytes');
+});
+
+test('the committed bundle matches a fresh build', () => {
+  // The shipped artifact is `dist/colouring-book.html`. Rebuilding it is a
+  // discipline, not a check, unless something compares it to what the source
+  // produces. This is that comparison: a source change that was not rebuilt
+  // into the bundle fails here instead of shipping.
+  const committed = readSource('./dist/colouring-book.html');
+  const fresh = buildToTemp().html;
+  assert.equal(
+    committed,
+    fresh,
+    'dist/colouring-book.html is stale: run `node build.js` and commit the result',
+  );
+});
+
+test('the page loads nothing from the network', () => {
+  // Vector mode's promise is that nothing leaves the machine. The browser test
+  // proves no fetch happens; this proves there is nothing to fetch, so a
+  // remote font or a tracking pixel cannot be added without failing here.
+  for (const file of ['./index.html', './styles.css', './dist/colouring-book.html']) {
+    const source = readSource(file);
+    const remote = [
+      /<link[^>]+href="https?:\/\//i,
+      /<img[^>]+src="https?:\/\//i,
+      /<script[^>]+src="https?:\/\//i,
+      /@import\s+url\(\s*['"]?https?:\/\//i,
+      /url\(\s*['"]?https?:\/\//i,
+      /<link[^>]+rel="preconnect"/i,
+    ];
+    for (const pattern of remote) {
+      assert.ok(!pattern.test(source), `${file} references a remote resource: ${pattern}`);
+    }
+  }
 });
 
 test('costNoteText quotes the model, the image count and the price', () => {
@@ -3085,8 +3385,7 @@ test('the built file keeps the dollar signs in the cost text', () => {
   // `$$` in the cost templates collapsed to `$` and the shipped file read
   // "about 0.20 per book". The dist browser test only runs vector mode, so
   // nothing caught it. Assert on the artifact itself.
-  build();
-  const out = readSource('./dist/colouring-book.html');
+  const { html: out } = buildToTemp();
   assert.ok(
     out.includes('`$${estimateImageCost(PAGE_COUNT + 1).toFixed(2)} per book.`'),
     'the cost note lost its dollar sign in the bundle',

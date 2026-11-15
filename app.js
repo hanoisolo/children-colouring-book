@@ -21,8 +21,10 @@ import {
   generateBook,
   generateImageBook,
   hasApiKey,
+  partialFailureText,
   readyStatusText,
   submitUiState,
+  themeNoteText,
 } from './src/book.js';
 import { PAGE_HEIGHT, PAGE_WIDTH } from './src/page.js';
 
@@ -126,16 +128,6 @@ function downloadBook(book) {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-/**
- * Say what the next click will cost before it is clicked.
- *
- * @param {HTMLInputElement} apiKeyInput
- * @param {HTMLElement} costNote
- */
-function updateCostNote(apiKeyInput, costNote) {
-  costNote.textContent = costNoteText(hasApiKey(apiKeyInput.value));
-}
-
 function init() {
   const themeInput = document.getElementById('theme-input');
   const nameInput = document.getElementById('name-input');
@@ -147,11 +139,24 @@ function init() {
   const downloadBtn = document.getElementById('download-btn');
   const bookTitle = document.getElementById('book-title');
   const costNote = document.querySelector('[data-role="cost-note"]');
+  const themeNote = document.querySelector('[data-role="theme-note"]');
+  const partialActions = document.querySelector('[data-role="partial-actions"]');
+  const partialNote = document.querySelector('[data-role="partial-note"]');
+  const retryBtn = document.querySelector('[data-role="retry-btn"]');
+  const vectorBtn = document.querySelector('[data-role="vector-btn"]');
 
   const form = themeInput.form;
   if (!form) {
     return;
   }
+
+  // A partial image book is held here so a retry can finish it without
+  // re-billing the pictures that already succeeded. It is discarded the moment
+  // the theme, the name or the key changes, because it belongs to one book.
+  let partial = null;
+  // A second submit while the first is in flight would launch a second paid
+  // batch. The disabled button covers the common case; this covers the rest.
+  let inFlight = false;
 
   const applyUiState = (phase) => {
     const ui = submitUiState(phase);
@@ -160,15 +165,65 @@ function init() {
     generateBtn.setAttribute('aria-busy', ui.ariaBusy);
   };
 
-  updateCostNote(apiKeyInput, costNote);
-  apiKeyInput.addEventListener('input', () => updateCostNote(apiKeyInput, costNote));
+  const clearPartial = () => {
+    partial = null;
+    partialActions.hidden = true;
+    partialNote.textContent = '';
+  };
 
-  form.addEventListener('submit', async (event) => {
-    event.preventDefault();
+  const showBook = (book) => {
+    renderPreviews(previewEl, bookTitle, book);
+    statusEl.textContent = readyStatusText(book);
+    downloadBtn.onclick = () => downloadBook(book);
+    applyUiState('ready');
+  };
+
+  const showPartial = (result) => {
+    partial = result;
+    // A book from a previous run must not stay downloadable under a failed
+    // state, or the user downloads the wrong thing.
+    downloadBtn.disabled = true;
+    downloadBtn.onclick = null;
+    statusEl.textContent = '';
+    errorEl.textContent = '';
+    partialNote.textContent = partialFailureText(result);
+    partialActions.hidden = false;
+    applyUiState('error');
+  };
+
+  const updateCostNote = () => {
+    costNote.textContent = costNoteText(hasApiKey(apiKeyInput.value));
+  };
+
+  const setThemeNote = (note) => {
+    themeNote.textContent = note;
+    themeNote.hidden = note.length === 0;
+  };
+
+  updateCostNote();
+  apiKeyInput.addEventListener('input', () => {
+    updateCostNote();
+    clearPartial();
+  });
+  for (const input of [themeInput, nameInput]) {
+    input.addEventListener('input', () => {
+      // The note describes the theme that was last generated, so it is stale
+      // the moment either field changes.
+      setThemeNote('');
+      clearPartial();
+    });
+  }
+
+  const run = async (resume) => {
+    if (inFlight) {
+      return;
+    }
+    inFlight = true;
 
     const apiKey = apiKeyInput.value.trim();
-    updateCostNote(apiKeyInput, costNote);
+    updateCostNote();
     errorEl.textContent = '';
+    clearPartial();
     applyUiState('busy');
 
     try {
@@ -179,15 +234,46 @@ function init() {
           theme: themeInput.value,
           name: nameInput.value,
           apiKey,
+          resume,
         });
       } else {
         book = generateBook(themeInput.value, nameInput.value);
       }
 
-      renderPreviews(previewEl, bookTitle, book);
-      statusEl.textContent = readyStatusText(book);
-      downloadBtn.onclick = () => downloadBook(book);
-      applyUiState('ready');
+      if (book.complete === false) {
+        showPartial(book);
+        return;
+      }
+
+      showBook(book);
+      setThemeNote(themeNoteText(book.matched, book.theme));
+    } catch (error) {
+      errorEl.textContent = error.message;
+      statusEl.textContent = '';
+      applyUiState('error');
+    } finally {
+      inFlight = false;
+    }
+  };
+
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    run(null);
+  });
+
+  retryBtn.addEventListener('click', () => {
+    if (partial) {
+      run(partial);
+    }
+  });
+
+  vectorBtn.addEventListener('click', () => {
+    // The user chose the free path. The paid images are abandoned by their own
+    // choice, which is the one case where discarding them is not a defect.
+    clearPartial();
+    errorEl.textContent = '';
+    try {
+      showBook(generateBook(themeInput.value, nameInput.value));
     } catch (error) {
       errorEl.textContent = error.message;
       statusEl.textContent = '';

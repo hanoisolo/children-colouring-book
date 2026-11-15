@@ -176,6 +176,45 @@ button:not(:disabled):hover {
 }
 
 /*
+ * Shown when the theme matched no motif. The book still generates, so this is a
+ * note rather than an error, but a silent fallback would leave a parent
+ * wondering why a typo produced cupcakes next to robots.
+ */
+.theme-note {
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.85rem;
+  color: #7a4a00;
+  background: #fdf6e8;
+  border: 1px solid #e8d5a8;
+  border-radius: 6px;
+}
+
+/*
+ * Shown when some of the paid images failed. The user has already been billed
+ * for the ones that succeeded, so the choice is explicit: finish the set, or
+ * take the free offline book.
+ */
+.partial-actions {
+  margin: 1rem 0 0;
+  padding: 1rem;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.partial-note {
+  margin: 0 0 0.75rem;
+  font-weight: 600;
+}
+
+.partial-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+/*
  * An image card is a page-shaped frame. The JPEG is positioned inside it by the
  * same rect the PDF uses, and the overlay SVG covers the whole page, so the
  * preview and the print cannot disagree about where the artwork and the name
@@ -222,6 +261,8 @@ button:not(:disabled):hover {
   .status,
   .error,
   .cost-note,
+  .theme-note,
+  .partial-actions,
   #download-btn {
     display: none;
   }

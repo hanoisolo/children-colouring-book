@@ -20,8 +20,23 @@
 /** Cheapest nano-banana image model. */
 export const IMAGE_MODEL = 'gemini-3.1-flash-lite-image';
 
-/** List price per 1K image, in USD. */
-export const IMAGE_PRICE_USD = 0.0336;
+/**
+ * Where the price below comes from, and when it was read.
+ *
+ * The UI quotes a cost before the user spends anything, so the number it quotes
+ * and the number this module bills against have to be the same number. They are
+ * derived from the published rate rather than typed twice.
+ */
+export const IMAGE_PRICE_SOURCE = 'https://ai.google.dev/gemini-api/docs/pricing (read 2026-11-15)';
+
+/** Image output tokens the model bills for one 1K image, measured. */
+export const IMAGE_TOKENS_PER_IMAGE = 1120;
+
+/** List price per million image output tokens, in USD. */
+export const IMAGE_PRICE_PER_MTOKENS = 30;
+
+/** List price per 1K image, in USD, derived from the two constants above. */
+export const IMAGE_PRICE_USD = (IMAGE_TOKENS_PER_IMAGE / 1_000_000) * IMAGE_PRICE_PER_MTOKENS;
 
 /** Base URL for the generateContent endpoint. */
 export const IMAGE_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
@@ -117,10 +132,14 @@ export function base64ToBytes(text) {
  * distinct motif set per page, so the prompt inherits that variety instead of
  * asking the model for randomness it does not have.
  *
- * @param {{ theme: string, name: string, pageIndex: number, motifs: string[] }} input
+ * The child's name is deliberately not a parameter. It is drawn as vector
+ * strokes by `src/lettering.js` and never needs to reach a third party, so it
+ * cannot reach one by accident: there is no argument to pass it through.
+ *
+ * @param {{ theme: string, pageIndex: number, motifs: string[] }} input
  * @returns {string}
  */
-export function buildPagePrompt({ theme, name, pageIndex, motifs }) {
+export function buildPagePrompt({ theme, pageIndex, motifs }) {
   const subject = Array.isArray(motifs) && motifs.length > 0
     ? motifs.join(', ')
     : 'a cheerful scene';
@@ -128,7 +147,7 @@ export function buildPagePrompt({ theme, name, pageIndex, motifs }) {
     LINE_ART_STYLE,
     `Theme: ${String(theme).trim()}.`,
     `Draw: ${subject}.`,
-    `This is page ${Number(pageIndex) + 1} of a book for ${String(name).trim()}.`,
+    `This is page ${Number(pageIndex) + 1} of the book.`,
     'Centred composition, one clear scene, full page.',
   ].join(' ');
 }
@@ -141,17 +160,22 @@ export function buildPagePrompt({ theme, name, pageIndex, motifs }) {
  * misspell a name and a misspelled name is a defect rather than a cosmetic
  * issue. Asking for the space keeps the band from slicing artwork.
  *
- * @param {{ theme: string, name: string }} input
+ * Like `buildPagePrompt`, this takes no name. An earlier version asked the model
+ * not to write the name and had to name it to do so, which sent a child's first
+ * name to Google in every request. Forbidding all text achieves the same layout
+ * without transmitting anything about the child.
+ *
+ * @param {{ theme: string }} input
  * @returns {string}
  */
-export function buildCoverPrompt({ theme, name }) {
+export function buildCoverPrompt({ theme }) {
   return [
     LINE_ART_STYLE,
     `Theme: ${String(theme).trim()}.`,
     'This is the cover of a colouring book.',
     'Compose the illustration in the lower two thirds of the page.',
     'Leave the top third completely empty white space for a title.',
-    `Do not write the name ${String(name).trim()} or any other text.`,
+    'Do not write any text, lettering, words or numbers.',
   ].join(' ');
 }
 
@@ -332,10 +356,40 @@ export async function requestImage({ apiKey, prompt, model, fetchImpl, signal })
 }
 
 /**
+ * Request one image, retrying a 429 once.
+ *
+ * Shared by the fail-fast and the settled generators so the retry policy cannot
+ * drift between them.
+ *
+ * @param {{ apiKey: string, prompt: string, model?: string, fetchImpl?: Function, signal?: AbortSignal }} input
+ * @returns {Promise<{ mimeType: string, base64: string, bytes: Uint8Array }>}
+ */
+async function requestWithRetry({ apiKey, prompt, model, fetchImpl, signal }) {
+  let lastError;
+  for (let attempt = 0; attempt < IMAGE_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return await requestImage({ apiKey, prompt, model, fetchImpl, signal });
+    } catch (error) {
+      lastError = error;
+      const retryable = /\(429\)/.test(error?.message ?? '');
+      if (!retryable || attempt === IMAGE_MAX_ATTEMPTS - 1) {
+        throw error;
+      }
+    }
+  }
+  throw lastError;
+}
+
+/**
  * Request several images with a concurrency cap, preserving input order.
  *
  * Six parallel requests invite a 429, so at most `concurrency` are in flight and
  * a 429 is retried once before the book fails.
+ *
+ * This is the fail-fast form: the first unrecoverable failure rejects the whole
+ * call. `generateImagesSettled` is the form that keeps going, and it is what the
+ * book generator uses, because a parent who has already paid for three images
+ * should not lose them to a failure on the fourth.
  *
  * @param {{ apiKey: string, prompts: string[], model?: string, fetchImpl?: Function, concurrency?: number, signal?: AbortSignal }} input
  * @returns {Promise<Array<{ mimeType: string, base64: string, bytes: Uint8Array }>>}
@@ -360,32 +414,68 @@ export async function generateImages({
     while (next < prompts.length) {
       const index = next;
       next += 1;
-      let lastError;
-      for (let attempt = 0; attempt < IMAGE_MAX_ATTEMPTS; attempt += 1) {
-        try {
-          results[index] = await requestImage({
-            apiKey,
-            prompt: prompts[index],
-            model,
-            fetchImpl,
-            signal,
-          });
-          lastError = undefined;
-          break;
-        } catch (error) {
-          lastError = error;
-          const retryable = /\(429\)/.test(error?.message ?? '');
-          if (!retryable || attempt === IMAGE_MAX_ATTEMPTS - 1) {
-            throw error;
-          }
-        }
-      }
-      if (lastError) {
-        throw lastError;
-      }
+      results[index] = await requestWithRetry({
+        apiKey,
+        prompt: prompts[index],
+        model,
+        fetchImpl,
+        signal,
+      });
     }
   }
 
   await Promise.all(Array.from({ length: limit }, () => worker()));
   return results;
+}
+
+/**
+ * Request several images, recording each slot's outcome instead of throwing.
+ *
+ * Returns parallel arrays: `images[i]` is the image or `null`, and `errors[i]`
+ * is the failure or `null`. An abort still propagates, because a user who
+ * cancelled wants the requests to stop rather than to be told which ones failed.
+ *
+ * @param {{ apiKey: string, prompts: string[], model?: string, fetchImpl?: Function, concurrency?: number, signal?: AbortSignal }} input
+ * @returns {Promise<{ images: Array<object|null>, errors: Array<Error|null> }>}
+ */
+export async function generateImagesSettled({
+  apiKey,
+  prompts,
+  model,
+  fetchImpl,
+  concurrency = IMAGE_CONCURRENCY,
+  signal,
+}) {
+  if (!Array.isArray(prompts) || prompts.length === 0) {
+    throw new TypeError('generateImagesSettled expects a non-empty array of prompts');
+  }
+
+  const limit = Math.max(1, Math.min(Number(concurrency) || 1, prompts.length));
+  const images = new Array(prompts.length).fill(null);
+  const errors = new Array(prompts.length).fill(null);
+  let next = 0;
+
+  async function worker() {
+    while (next < prompts.length) {
+      const index = next;
+      next += 1;
+      try {
+        images[index] = await requestWithRetry({
+          apiKey,
+          prompt: prompts[index],
+          model,
+          fetchImpl,
+          signal,
+        });
+      } catch (error) {
+        if (error && error.name === 'AbortError') {
+          throw error;
+        }
+        errors[index] = error;
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: limit }, () => worker()));
+  return { images, errors };
 }

@@ -33,7 +33,7 @@ import {
   buildCoverPrompt,
   buildPagePrompt,
   estimateImageCost,
-  generateImages,
+  generateImagesSettled,
 } from './imagegen.js';
 
 export const MAX_THEME_LENGTH = 60;
@@ -227,6 +227,7 @@ export function generateBook(theme, name) {
     theme: result.theme,
     name: result.name,
     filename: sanitiseFilename(result.name),
+    matched: plan.matched,
     cover: {
       index: 0,
       label: 'Cover',
@@ -318,6 +319,14 @@ export function composeImageCover({ theme, name, image }) {
  * themselves are not, so the byte-identical guarantee that holds for
  * `generateBook` does not hold here. That is the trade the user asked for.
  *
+ * A partial failure does not throw away what was already paid for. If at least
+ * one image succeeded, this returns `{ complete: false, images, failures, ... }`
+ * with no `pdfBytes`, and the caller decides whether to retry the missing slots
+ * or fall back to the offline vector book. Passing that result back as `resume`
+ * requests only the slots that are still empty, so a retry never re-bills an
+ * image the user already owns. If nothing succeeded there is nothing to salvage,
+ * so the first error is thrown.
+ *
  * @param {{
  *   theme: string,
  *   name: string,
@@ -325,27 +334,119 @@ export function composeImageCover({ theme, name, image }) {
  *   fetchImpl?: Function,
  *   model?: string,
  *   signal?: AbortSignal,
+ *   resume?: object,
  * }} input
  * @returns {Promise<object>}
  */
-export async function generateImageBook({ theme, name, apiKey, fetchImpl, model, signal }) {
+export async function generateImageBook({
+  theme,
+  name,
+  apiKey,
+  fetchImpl,
+  model,
+  signal,
+  resume,
+}) {
   const result = validateInputs(theme, name);
   if (!result.ok) {
     throw new Error(result.errors.join(' '));
   }
 
   const plan = planBookPages(result.theme, result.name);
+  // The name is not passed to either prompt builder. It is drawn as vector
+  // strokes on the cover and has no business reaching a third party, so the
+  // builders take no name argument at all.
   const prompts = [
-    buildCoverPrompt({ theme: result.theme, name: result.name }),
+    buildCoverPrompt({ theme: result.theme }),
     ...plan.pages.map((page) => buildPagePrompt({
       theme: result.theme,
-      name: result.name,
       pageIndex: page.index,
       motifs: page.motifs,
     })),
   ];
 
-  const images = await generateImages({ apiKey, prompts, model, fetchImpl, signal });
+  const total = prompts.length;
+  let images;
+  let errors;
+
+  if (resume) {
+    // A resume is only meaningful for the same book. Anything else would splice
+    // one child's artwork into another's, so it is refused rather than merged.
+    if (resume.theme !== result.theme || resume.name !== result.name) {
+      throw new Error('cannot resume a book for a different theme or name');
+    }
+    if (!Array.isArray(resume.images) || resume.images.length !== total) {
+      throw new Error(`cannot resume a book with ${total} slots from a different shape`);
+    }
+    images = [...resume.images];
+    errors = Array.isArray(resume.errors) && resume.errors.length === total
+      ? [...resume.errors]
+      : new Array(total).fill(null);
+
+    const missing = [];
+    images.forEach((image, index) => {
+      if (!image) {
+        missing.push(index);
+      }
+    });
+    if (missing.length > 0) {
+      const settled = await generateImagesSettled({
+        apiKey,
+        prompts: missing.map((index) => prompts[index]),
+        model,
+        fetchImpl,
+        signal,
+      });
+      missing.forEach((slot, offset) => {
+        images[slot] = settled.images[offset];
+        errors[slot] = settled.errors[offset];
+      });
+    }
+  } else {
+    const settled = await generateImagesSettled({ apiKey, prompts, model, fetchImpl, signal });
+    images = settled.images;
+    errors = settled.errors;
+  }
+
+  const succeeded = images.filter(Boolean).length;
+  if (succeeded === 0) {
+    throw errors.find(Boolean) ?? new Error('no images were generated');
+  }
+
+  const title = `${result.name}'s colouring book`;
+  const filename = sanitiseFilename(result.name);
+
+  if (succeeded < total) {
+    return {
+      complete: false,
+      mode: 'image',
+      title,
+      theme: result.theme,
+      name: result.name,
+      filename,
+      matched: plan.matched,
+      images,
+      errors,
+      succeeded,
+      total,
+      failures: images
+        .map((image, index) => (image ? null : {
+          index,
+          label: index === 0 ? 'Cover' : `Page ${index}`,
+          message: errors[index]?.message ?? 'not generated',
+        }))
+        .filter(Boolean),
+      costUsd: estimateImageCost(succeeded),
+    };
+  }
+
+  // Every slot is filled. The guard is explicit rather than implied by the
+  // count above, because a malformed `resume` is caller-supplied data and a
+  // truncated PDF is worse than a thrown error.
+  if (images.length !== total || !images.every(Boolean)) {
+    throw new Error('refusing to build a PDF from an incomplete image set');
+  }
+
   const [coverImage, ...pageImages] = images;
 
   const cover = composeImageCover({
@@ -369,7 +470,6 @@ export async function generateImageBook({ theme, name, apiKey, fetchImpl, model,
     };
   });
 
-  const title = `${result.name}'s colouring book`;
   const pdfBytes = buildPdf(
     [
       cover.pdfPage,
@@ -384,16 +484,55 @@ export async function generateImageBook({ theme, name, apiKey, fetchImpl, model,
   );
 
   return {
+    complete: true,
     title,
     theme: result.theme,
     name: result.name,
-    filename: sanitiseFilename(result.name),
+    filename,
+    matched: plan.matched,
     mode: 'image',
     cover,
     pages,
     pdfBytes,
     costUsd: estimateImageCost(images.length),
   };
+}
+
+/**
+ * What to say when the theme matched nothing.
+ *
+ * An unmatched theme is not an error — the book still generates, from the
+ * general motif set — but it is a surprise worth naming, because a typo
+ * otherwise produces cupcakes next to robots with no explanation. Pure so the
+ * wording is pinned without a DOM.
+ *
+ * @param {boolean} matched
+ * @param {string} theme
+ * @returns {string}
+ */
+export function themeNoteText(matched, theme) {
+  if (matched) {
+    return '';
+  }
+  return `No motifs matched "${String(theme).trim()}", so the pages use the general set. `
+    + 'Try a simpler theme, like "space dinosaurs" or "under the sea".';
+}
+
+/**
+ * What to say when some of the pictures were drawn and some were not.
+ *
+ * The user has already paid for the ones that succeeded, so the message names
+ * the count, the cost of finishing, and the free alternative. Pure so the
+ * wording and the arithmetic are pinned without a DOM.
+ *
+ * @param {{ succeeded: number, total: number }} partial
+ * @returns {string}
+ */
+export function partialFailureText(partial) {
+  const missing = partial.total - partial.succeeded;
+  return `${partial.succeeded} of ${partial.total} pictures were drawn. `
+    + `Retry the missing ${missing} (about $${estimateImageCost(missing).toFixed(2)}), `
+    + 'or download the offline vector book instead.';
 }
 
 /**

@@ -51,6 +51,7 @@ built by `npm run build` and opened straight from disk with no server.
 | `dist/colouring-book.html` | **The shipped artifact.** One file, no external refs, opens from `file://` |
 | `smoke.html` | Browser smoke-test fixture: drives the real page in an iframe |
 | `test_browser.js` | Headless Chromium smoke test (`npm run test:browser`) |
+| `scripts/release.sh` | Release preflight and published-asset hash verification |
 | `src/rng.js` | `hashString` (32-bit) and `makeRng` (seeded PRNG) |
 | `src/themes.js` | Theme normalisation, stopwords, 20+ motif vocabulary, fallback |
 | `src/motifs.js` | Procedural motif polyline generators in `0..1` boxes |
@@ -73,7 +74,7 @@ npm test
 That runs two layers:
 
 ```
-node test_colouring_book.js   # 267 unit tests, no browser, ~320ms
+node test_colouring_book.js   # 284 unit tests, no browser, ~400ms
 node test_browser.js          # 3 browser tests, needs Edge or Chrome, ~3.3s
 ```
 
@@ -182,11 +183,21 @@ This invariant is never weakened, skipped, or broadened to make a suite pass.
   duration of the page and is sent only in the `x-goog-api-key` header. No
   `localStorage`, no `sessionStorage`, no cookie, no query string, no log line.
   A test asserts the key never appears in the generated PDF bytes.
+- **The child's name never reaches the image service.** `buildPagePrompt` and
+  `buildCoverPrompt` take no `name` parameter at all, so there is no argument to
+  leak it through. The name is drawn as vector strokes by `src/lettering.js` and
+  is only ever written into the PDF and the preview. Two tests hold this: a
+  structural one (a name handed in anyway is ignored) and an end-to-end canary
+  (`Xqzzy`, `Zoë`, `José` absent from URL, headers and body in every request,
+  including case-folded and NFD-normalized variants). The theme *is* sent, so
+  the form warns against typing personal details into it.
 - **`dist/colouring-book.html` must be rebuilt and committed whenever `src/`,
   `app.js`, `styles.css` or `index.html` changes.** A stale bundle is a shipped
-  bug: it is the file users open. `npm test` includes a test that the bundle is
-  self-contained and parses, but it cannot know the bundle is stale, so the
-  rebuild is a discipline, not a check.
+  bug: it is the file users open. This is now **checked, not trusted**:
+  `npm test` builds to a temp path and compares the result byte-for-byte against
+  the committed bundle, so a source change that was not rebuilt fails the gate.
+  Tests must never write `dist/` — when they did, the suite regenerated the
+  artifact it was verifying and a stale bundle could never fail anything.
 - **The app runs two ways.** `npm start` serves the source over HTTP for
   development. `dist/colouring-book.html` opens from `file://` with no server,
   because the bundler inlines every module into one classic script. A browser
@@ -236,11 +247,53 @@ then fixed.
     strips the `file://` boot script. It handles this project's import graph and
     nothing else. Do not grow it into a tool.
 
+## Partial-failure contract (from the audit fix pass)
+
+Binding for any work on image mode. A parent who has paid for three pictures
+must not lose them to a failure on the fourth.
+
+1. **`generateImages` stays fail-fast; `generateImagesSettled` is what the book
+   uses.** The fail-fast form is pinned by three rejection tests and is still the
+   primitive. The settled form returns parallel `images` / `errors` arrays and
+   keeps going. Both share `requestWithRetry`, so the 429 policy cannot drift.
+2. **Zero successes throws; at least one returns a partial.** With every image
+   failed there is nothing to salvage, so the first error is thrown (a baseline
+   test pins the 401 case). With one or more, `generateImageBook` returns
+   `{ complete: false, images, errors, failures, succeeded, total, costUsd }`
+   and **no `pdfBytes`** — a partial book must never become a PDF.
+3. **`resume` finishes a partial without re-billing.** Passing the partial back
+   as `resume` requests only the empty slots. It refuses a different theme or
+   name, and refuses a different slot count, because splicing one child's
+   artwork into another's is worse than failing.
+4. **Never silently substitute vector art.** `app.js` shows the count, the cost
+   of finishing, and the free alternative, and waits for a choice. The vector
+   path runs only when the user clicks it.
+5. **A failed state must not leave a stale download.** `showPartial` disables
+   the download button and clears its handler, so a book from a previous run
+   cannot be downloaded under a failed state.
+6. **The in-flight guard is explicit.** The disabled button covers the common
+   case; a `inFlight` flag covers the rest, so a double submit cannot launch two
+   paid batches.
+
+## Release verification
+
+`scripts/release.sh` closes the gap between `master` and the download link:
+
+```
+scripts/release.sh            # clean tree on master, full gate, prints the sha256
+scripts/release.sh --verify   # downloads the published asset and compares hashes
+```
+
+`--verify` is the only step that proves `releases/latest/download/colouring-book.html`
+matches `dist/colouring-book.html`. Run it after uploading an asset. It found a
+real mismatch on its first run: the published asset was serving an older bundle
+than `master`.
+
 ## Status
 
 - **Upgrade complete: image mode and the downloadable single file are shipped.**
 - Baseline before the upgrade: `d846283`, 151 unit tests + 1 browser test.
-- Gate: `npm test` -> 267 unit tests + 3 browser tests, 0 failures, 0 skipped.
+- Gate: `npm test` -> 284 unit tests + 3 browser tests, 0 failures, 0 skipped.
 - Landed in the upgrade: `src/imagegen.js`, `build.js`,
   `dist/colouring-book.html`; modified `src/pdf.js`, `src/book.js`,
   `src/page.js`, `index.html`, `app.js`, `styles.css`, `package.json`,
@@ -311,6 +364,36 @@ survivors as coverage.
   survivors. The 29 that remain are listed below.
 - No further phase is planned. The next step, if requested, is the `gemini-ship`
   skill: documentation, full verification, security audit, publish or PR.
+
+### Audit fix pass (baseline `08b7e24`)
+
+An external brief-only audit raised 13 findings. Seven were real and are fixed;
+six were already covered by existing tests and were verified as such rather than
+re-implemented.
+
+- **Fixed:** the child's name was sent to Gemini in all six requests (now
+  structurally impossible); the bundle-freshness check was vacuous because the
+  suite rewrote `dist/` (now a real byte comparison); partial image failure
+  discarded paid images (now a partial result with `resume`); no zero-network
+  assertion in vector mode (now asserted, with fetch instrumented in both
+  modes); silent theme fallback (now a `theme-note`); no release verification
+  (now `scripts/release.sh`); pricing had no dated source (now derived from
+  `IMAGE_TOKENS_PER_IMAGE` and `IMAGE_PRICE_PER_MTOKENS`).
+- **Already covered, not re-implemented:** xref offsets, stream `/Length`,
+  `q`/`Q` balance, `B`/`S`/`f` selection, white fill, UTF-16BE hex and paren
+  escaping, Y flip, EXIF-thumbnail `jpegSize`, non-square `fitImageRect`, base64
+  padding, concurrency clamp, key-in-error, determinism grep, reserved
+  filenames, lone surrogates.
+- **Out of scope:** print on real paper, mobile `file://` behaviour, and
+  screen-reader/keyboard accessibility need real hardware.
+- Gate: `npm test` -> 284 unit tests + 3 browser tests, 0 failures.
+- Stage 6 assertion scan: `SCAN: PASS` against `08b7e24` — 51 assertions added,
+  4 removed and justified in `plans/removal_justification_audit_fix.md` (all
+  four pinned the name leak; each is replaced by a stricter assertion plus an
+  end-to-end canary). A fifth removal was a genuine coverage loss and was
+  restored rather than waived.
+- Evidence trail: `plans/audit_fix_brief.md`, `plans/audit_fix_plan.md`,
+  `plans/stage6_scan.md`, `plans/removal_justification_audit_fix.md`.
 
 ## Stage 6 mutation gate
 
