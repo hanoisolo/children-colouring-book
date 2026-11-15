@@ -1,6 +1,6 @@
 # AGENTS.md — children-colouring-book
 
-Local project instructions. Inherits `C:\Users\whosh\.vibe\AGENTS.md` (Sections 1-13).
+Local project instructions. Inherits the user-level `~/.vibe/AGENTS.md` (Sections 1-13).
 This file may add rules but may not weaken them.
 
 ## Project

@@ -515,7 +515,7 @@ test('sanitiseFilename never emits a Windows reserved device name', () => {
 });
 
 test('sanitiseFilename cannot escape the download directory', () => {
-  for (const name of ['../etc/passwd', '..\\..\\windows', '/absolute', 'C:\\Users', '.hidden', 'name.']) {
+  for (const name of ['../etc/passwd', '..\\..\\windows', '/absolute', 'C:/temp', '.hidden', 'name.']) {
     const filename = sanitiseFilename(name);
     assert.ok(!filename.includes('/'), `${name} kept a forward slash`);
     assert.ok(!filename.includes('\\'), `${name} kept a backslash`);
@@ -1614,6 +1614,13 @@ test('pdfTextString escapes ASCII and encodes non-ASCII as UTF-16BE', () => {
   assert.equal(pdfTextString('Zo\u00eb'), '<FEFF005A006F00EB>');
   assert.equal(pdfTextString('\u00c9'), '<FEFF00C9>');
   assert.equal(pdfTextString('\u{1F600}'), '<FEFFD83DDE00>', 'an astral character was not split into a surrogate pair');
+});
+
+test('pdfTextString replaces a lone surrogate instead of emitting it', () => {
+  assert.equal(pdfTextString('\uD800'), '<FEFFFFFD>', 'a lone high surrogate was emitted verbatim');
+  assert.equal(pdfTextString('\uDC00'), '<FEFFFFFD>', 'a lone low surrogate was emitted verbatim');
+  assert.equal(pdfTextString('a\uD800b'), '<FEFF0061FFFD0062>', 'a lone surrogate mid-string was emitted verbatim');
+  assert.equal(pdfTextString('\u{1F600}'), '<FEFFD83DDE00>', 'a valid pair was mistaken for lone surrogates');
 });
 
 test('buildPdf encodes a non-ASCII title as a hex string', () => {

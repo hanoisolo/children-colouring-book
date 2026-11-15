@@ -68,6 +68,10 @@ export function pdfTextString(value) {
       const offset = code - 0x10000;
       hex += (0xd800 + (offset >> 10)).toString(16).padStart(4, '0').toUpperCase();
       hex += (0xdc00 + (offset & 0x3ff)).toString(16).padStart(4, '0').toUpperCase();
+    } else if (code >= 0xd800 && code <= 0xdfff) {
+      // A lone surrogate is not a code point. Emitting it verbatim would write
+      // ill-formed UTF-16BE, so substitute the replacement character.
+      hex += 'FFFD';
     } else {
       hex += code.toString(16).padStart(4, '0').toUpperCase();
     }
