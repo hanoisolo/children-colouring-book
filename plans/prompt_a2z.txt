@@ -1,0 +1,158 @@
+## Architect Context Packet
+- Mode & Tier: roadmap (Tier 4 — multi-phase system)
+- Project & Stack: children-colouring-book | Web UI (HTML/CSS/JS) — vanilla ES2020 modules, zero third-party dependencies, zero build step | Node v26.12.1 (headless tests via `node:test` + `node:assert/strict`), Python 3.15.1 present but unused by the app
+- Git Baseline: UNCOMMITTED_INIT (repository initialised, zero commits) | Working tree: CLEAN
+- Baseline Test Status: `node test_colouring_book.js` -> GREENFIELD_0_TESTS
+- Canonical File Inventory:
+  * `.gitignore` (config, 40 lines)
+  * `plans/prompt_a2z.txt` (doc, this file)
+  * `plans/` (empty), `assets/` (empty), `src/` (empty)
+  * No source files exist yet — this is a greenfield build.
+- Mandatory Anti-Drift Invariants: DOM selector & event parity (STACK_MATRIX.md Web UI row; AGENTS.md Section 8). Exact required IDs are listed in §7. Every `getElementById`, `querySelector`, `querySelectorAll`, and `data-*` selector used in `app.js` must exist verbatim in `index.html`, and the check must be a programmatic test, not a manual review.
+
+---
+
+# Task
+
+Produce a complete A-to-Z Master Roadmap for the project specified below. You own the architecture, the module boundaries, the segment ordering, and the verification gates. Do not write application code — write the plan that an executor agent will implement segment by segment.
+
+## 1. Product vision
+
+A personalised children's colouring-book generator that runs entirely in the browser with no server, no network calls, and no third-party libraries.
+
+The user supplies two inputs:
+
+- **Theme** — free text, 1-60 characters, e.g. `space dinosaurs`, `under the sea`, `fairy garden`.
+- **Child's name** — 1-20 characters, letters, spaces, hyphens and apostrophes only, e.g. `Amara`, `Liam-James`, `O'Brien`.
+
+The app produces a single downloadable PDF containing six A4 portrait pages:
+
+1. A **cover** featuring the child's name in large, thick-line, colourable vector lettering, a title, and the theme as a subtitle.
+2. **Five distinct interior pages** of black-and-white, thick-line line art drawn procedurally from the theme.
+
+The art must be genuinely printable and genuinely colourable: pure black strokes on white, no greys, no colour, no raster images, no embedded fonts, and a stroke weight heavy enough for a wax crayon.
+
+## 2. Hard technical constraints
+
+These are non-negotiable and every segment gate must respect them.
+
+1. **Zero third-party dependencies.** No `dependencies` or `devDependencies` in `package.json`. No CDN links, no external fonts, no `node_modules`. The only `package.json` content permitted is `name`, `private`, `type: "module"`, `scripts`, and `description`.
+2. **Zero build step.** `index.html` loads `app.js` with `<script type="module">`. Every module under `src/` is a native ES module using `export`, importable unchanged by both the browser and Node.
+3. **Deterministic output.** The same `(theme, name)` pair must produce a byte-identical PDF on every run, on every machine. All randomness comes from a seeded PRNG. No `Math.random()`, no `Date.now()`, no locale-dependent sorting anywhere in `src/`.
+4. **Offline and headless.** No test may open a browser window, spawn a dialog, bind a network port, or make an HTTP request. Tests import modules directly and parse generated strings and bytes.
+5. **No `eval`, no `new Function`, no dynamic `import()` of computed paths.**
+
+## 3. Required module boundaries
+
+The executor must implement these modules. You may adjust names or split a module only if you keep the responsibility boundaries intact and stay within the 1-3 files per segment rule.
+
+| Module | Responsibility |
+| :--- | :--- |
+| `src/rng.js` | String hash (32-bit) and seeded PRNG factory. Pure, no state leakage between calls. |
+| `src/themes.js` | Theme normalisation, tokenising, stopword removal, and keyword-to-motif-vocabulary mapping with a documented fallback. |
+| `src/motifs.js` | Procedural motif generators. Each returns polylines in a local 0..1 box plus a bounding box. |
+| `src/lettering.js` | Single-stroke vector alphabet and text layout. |
+| `src/page.js` | Interior page composition: frame, ground line, motif placement, SVG serialisation. |
+| `src/cover.js` | Cover composition: title, child's name, theme subtitle, decorative frame. |
+| `src/pdf.js` | Minimal PDF 1.4 writer emitting vector paths with a correct cross-reference table. |
+| `src/book.js` | Orchestrator: `(theme, name)` -> `{ cover, pages, pdfBytes, filename }`. |
+| `app.js` | DOM controller: read form, validate, generate, render previews, trigger download. |
+| `index.html` | Form, status region, preview grid, download control. |
+| `styles.css` | Layout and print-friendly presentation. |
+| `test_colouring_book.js` | The entire headless suite. |
+| `package.json` | `type: "module"` declaration and a `test` script. No dependencies. |
+
+## 4. Required behaviour detail
+
+### 4.1 Determinism
+- `hashString(s)` returns a stable unsigned 32-bit integer. It must be stable across Node versions and must not depend on `Math.random` or object key order.
+- `makeRng(seed)` returns a function producing floats in `[0, 1)`. Two RNGs built from the same seed must produce identical sequences; different seeds must diverge within the first 10 draws.
+- The book seed derives from the normalised theme and normalised name. Each page derives its own sub-seed from the book seed and its page index, so pages differ from each other while the book stays stable.
+
+### 4.2 Theme interpretation
+- Normalise by trimming, lowercasing, collapsing whitespace, and stripping a documented stopword list (`the`, `a`, `an`, `of`, `and`, `in`, `on`, `under`, `my`, `with`).
+- Map remaining tokens to a motif vocabulary of **at least 20 motifs**, including at minimum: star, planet, rocket, moon, dinosaur, fish, shell, wave, flower, tree, butterfly, cloud, sun, house, balloon, cat, dog, car, mountain, rainbow.
+- A theme that matches nothing falls back to a documented generic set. The fallback must be reachable and tested.
+- Every interior page must contain at least three motifs, and at least one motif drawn from the theme's matched vocabulary (or the fallback set when nothing matched).
+
+### 4.3 Interior pages
+- Each page carries a thick decorative border frame and a ground or horizon line.
+- Between three and seven motifs per page, placed on a jittered grid with non-overlapping bounding boxes.
+- The five pages must be pairwise distinct: no two serialised SVGs identical, and the motif multiset must differ across at least four of the five pages.
+- Serialised SVG must be well-formed: a single root `<svg>` with `viewBox`, `xmlns`, and no unescaped `&`, `<`, or `>` in text content.
+
+### 4.4 Lettering
+- A single-stroke vector alphabet covering `A-Z`, `0-9`, space, hyphen, and apostrophe. Each glyph is one or more polylines in a 0..1 em box with y pointing down.
+- `layoutText(text, options)` returns polylines in page coordinates with configurable origin, size, and letter spacing.
+- An unsupported character must throw a descriptive `Error` naming the character. Silently dropping characters is a defect.
+- The cover renders the child's name uppercased at a cap height of at least 60 pt.
+
+### 4.5 PDF writer
+- Emit PDF 1.4: `%PDF-1.4` header, a binary comment line, a `/Type /Catalog` object, a `/Type /Pages` object, one `/Type /Page` object per book page, one content stream per page, a cross-reference table whose byte offsets each land exactly on the corresponding `<n> 0 obj`, a trailer with `/Size` and `/Root`, a `startxref` offset, and a terminating `%%EOF`.
+- Page size A4 portrait: `/MediaBox [0 0 595.28 841.89]`.
+- Content streams use `w` for line width, `0 0 0 RG` for stroke colour, `1 1 1 rg` plus `re f` for the white background, and `m`/`l`/`S` for paths.
+- Minimum stroke width 4 pt at A4 scale.
+- Return a `Uint8Array`. No `Buffer`, no Node-only APIs, so the same code runs in the browser.
+
+### 4.6 UI
+- `index.html` contains a form with a theme field, a name field, and a generate button; a status region; an error region with `role="alert"`; a preview grid; and a download button that is disabled until a book exists.
+- `app.js` validates input, surfaces validation failures in the error region, renders each page as an inline SVG preview, and on download creates a `Blob` from the PDF bytes and triggers a download named from the sanitised child's name.
+- The download filename must be filesystem-safe: lowercase, spaces to hyphens, non-alphanumerics stripped, with a `.pdf` suffix.
+
+## 5. Required test coverage
+
+`test_colouring_book.js` must use `node:test` and `node:assert/strict`, contain **at least 15 test cases and at least 40 assertions**, and cover at minimum:
+
+- hash stability and 32-bit range
+- RNG determinism for equal seeds and divergence for different seeds
+- theme tokenising, stopword removal, and fallback reachability
+- motif vocabulary size and per-motif polyline validity
+- page count, page distinctness, and motif-count bounds
+- theme-motif presence on every interior page
+- cover contains the child's name glyphs
+- lettering throws on an unsupported character
+- PDF header, `%%EOF`, page count, and `/MediaBox`
+- cross-reference offsets resolving to real object headers
+- stroke width floor and the absence of any non-black stroke colour
+- name sanitisation for the download filename
+- rejection of empty theme, empty name, over-length name, and illegal name characters
+- the DOM selector parity invariant from §7
+
+## 6. Phase and segment structure
+
+- **Exactly three segments per phase.** No phase may have two or four segments.
+- **One to three files per segment**, counting source, test, config, and doc files. Never more.
+- Every segment ends with a **plain CLI verification gate runnable in Git Bash**. Acceptable forms: `node --check <file>`, `node test_colouring_book.js`, `node --test`, `python -m py_compile <file>`. No PowerShell cmdlets, no IDE features, no GUI tools, no "visually confirm" gates.
+- Each segment must state: its files, its purpose, its gate command, and the exact expected pass condition.
+- `index.html` and `styles.css` must land in **Phase 1**, so the DOM selector parity test is enforceable from Phase 1 Segment 3 onward.
+- **Segment 3 of every phase must include the anti-drift invariant test** for this stack. For Phase 1 and Phase 2 that is the DOM selector parity check plus an export parity check (every `export` in `src/` is imported and exercised by the suite). For the final phase it is the full DOM selector parity check plus PDF structural validity.
+- Plan for **three phases** unless you can justify two. Each phase must end in a state where the suite is green and the app is runnable in a browser.
+
+## 7. Mandatory anti-drift invariant — exact DOM contract
+
+`index.html` must declare these IDs verbatim, and `app.js` must query them:
+
+| Selector | Element | Purpose |
+| :--- | :--- | :--- |
+| `#theme-input` | `<input type="text">` | Theme entry |
+| `#name-input` | `<input type="text">` | Child's name entry |
+| `#generate-btn` | `<button>` | Generate the book |
+| `#status` | `<p aria-live="polite">` | Progress and success messages |
+| `#error` | `<p role="alert">` | Validation failures |
+| `#preview` | `<div>` | Container for page previews |
+| `#download-btn` | `<button disabled>` | Download the PDF |
+| `#book-title` | `<h2>` | Generated book title |
+
+Additional required attributes:
+
+- Each preview figure carries `data-role="page-preview"` and `data-page-index="<n>"`.
+- The parity test must extract every `getElementById('x')`, `querySelector('#x')`, `querySelectorAll('[data-y]')`, and `data-*` selector literal from `app.js` and assert each exists verbatim in `index.html`. Any selector present in one file and absent from the other fails the gate.
+
+## 8. Output format
+
+- **Pure Markdown only.** No tool-call syntax, no fenced code blocks, no pseudo-executed commands, no external links presented as instructions.
+- Write gate commands as inline code spans, never as fenced blocks.
+- Structure: a short architecture overview, then one section per phase, each with a table of its three segments (files, purpose, gate, pass condition), then a risk register, then a definition-of-done checklist.
+- End the document with exactly one verdict line in this form:
+  `AUDIT: PASS - roadmap constraints satisfied (3 segments per phase, 1-3 files per segment, plain CLI gates, anti-drift invariant specified)`
+  or, if you cannot satisfy a constraint, `AUDIT: FAIL - <itemized weaknesses>`.

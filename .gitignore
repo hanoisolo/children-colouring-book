@@ -1,0 +1,39 @@
+# Secrets and credentials
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+secrets.json
+
+# Dependencies and virtual environments
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Agent and editor state
+.vibe/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Architect bridge runtime state (Section 5 / 13.2)
+plans/architect_usage.log
+plans/strike_counter.json
+plans/evidence_overrides.log
+plans/removal_waivers.log
+plans/escalation_gate.log
+plans/escalation_prompt.txt
+plans/escalation_fix.md
+plans/stage6_test.diff
+plans/stage6_scan.md
+plans/mutation_report.md
+
+# Generated build output
+dist/
+*.pdf
