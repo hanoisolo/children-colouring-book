@@ -71,8 +71,8 @@ Contract IDs, exact and non-negotiable:
 Required attributes: each preview figure carries `data-role="page-preview"` and
 `data-page-index="<n>"`.
 
-Phases 1 and 2 additionally enforce **export parity**: every `export` in `src/` is
-imported and exercised by the suite.
+Every phase additionally enforces **export parity**: every `export` in `src/` is
+imported and exercised by the suite, and `app.js` is asserted to export nothing.
 
 This invariant is never weakened, skipped, or broadened to make a suite pass.
 
@@ -88,21 +88,25 @@ This invariant is never weakened, skipped, or broadened to make a suite pass.
 
 ## Status
 
-- **Phase 2 complete. Phase 3 — Segment 1 pending.**
+- **Phase 3 complete. All three roadmap phases are done; the project is ship-ready.**
 - Roadmap: `plans/MASTER_ROADMAP.md` (3 phases x 3 segments).
-- Gate: `node test_colouring_book.js` -> 117 tests, 0 failures, 0 skipped.
-- Landed so far: `package.json`, `src/rng.js`, `src/themes.js`, `src/motifs.js`,
-  `src/lettering.js`, `src/page.js`, `src/cover.js`, `index.html`, `styles.css`,
-  `app.js`, `test_colouring_book.js`, `.gitattributes`.
+- Gate: `node test_colouring_book.js` -> 140 tests, 419 assertions, 0 failures,
+  0 skipped.
+- Landed: `package.json`, `src/rng.js`, `src/themes.js`, `src/motifs.js`,
+  `src/lettering.js`, `src/page.js`, `src/cover.js`, `src/pdf.js`, `src/book.js`,
+  `index.html`, `styles.css`, `app.js`, `test_colouring_book.js`,
+  `.gitattributes`.
 - Phase 1 milestone review: `AUDIT: PASS` (`plans/milestone_review_phase1.md`).
 - Phase 2 milestone review: `AUDIT: PASS` (`plans/milestone_review_phase2.md`).
+- Phase 3 milestone review: `AUDIT: PASS` (`plans/milestone_review_phase3.md`).
   `plans/milestone_brief.md` is the working brief for the phase currently under
   review; each completed phase's verdict is archived as
   `plans/milestone_review_phaseN.md`.
-- Phase 2 Stage 6: `SCAN: PASS` (200 assertions added, 4 removed and justified
-  in `plans/removal_justification.md`); mutation 72.0% (288 killed, 112
-  survived) recorded in `plans/mutation_baseline.json`.
-- Phase-boundary milestone review required after Phase 3 Segment 3 (Section 7).
+- Phase 3 Stage 6: `SCAN: PASS` (92 assertions added, 9 removed and justified in
+  `plans/removal_justification.md`); mutation 92.9% (92 killed, 7 survived)
+  recorded in `plans/mutation_baseline.json`.
+- No further phase is planned. The next step, if requested, is the `gemini-ship`
+  skill: documentation, full verification, security audit, publish or PR.
 
 ## Stage 6 mutation gate
 
@@ -172,3 +176,26 @@ boundary.
    bounds, unexported layout constants, and four DOM-only `app.js` lines. Do
    not pin them; pinning every internal constant would make any visual
    adjustment a test failure.
+
+## Ship constraints (from the Phase 3 milestone review)
+
+Binding for any post-ship work. They come from the architect's review of the
+Phase 3 boundary, which returned `AUDIT: PASS`.
+
+1. **No DOM shim, permanently.** Static selector parity is the agreed level of
+   DOM assurance. Adding `jsdom` or `happy-dom` would break the zero-dependency
+   constraint, and a hand-written mock `document` would only test the mock. The
+   three surviving `app.js` mutants are accepted on that basis.
+2. **Vector-only cover lettering stays.** The child's name is drawn as polylines
+   from `src/lettering.js`, not as PDF text, so the preview and the print are
+   identical and a child can colour the letters. The name is still readable
+   metadata in `/Info /Title`. If screen-reader or search support inside the
+   cover page is ever wanted, layer invisible text (`3 Tr`) with a `/Font`
+   behind the strokes without changing the geometry.
+3. **92.9% mutation score is the ship baseline.** Do not pin `circle`/`ellipse`
+   `segments = 24`; curve-sampling defaults are aesthetic tuning, and pinning
+   them makes any visual adjustment a test failure.
+4. **The mutation gate cannot see deleted logic.** It mutates added lines only.
+   Any future change that deletes behaviour must be covered by the
+   assertion-integrity scan plus a hand-written replacement test, because the
+   mutation pass will report a clean score either way.

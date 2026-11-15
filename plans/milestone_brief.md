@@ -1,69 +1,69 @@
 ## Architect Context Packet
-- Mode & Tier: audit (Tier 4 — multi-phase system, Phase 2 boundary milestone review)
+- Mode & Tier: audit (Tier 4 — multi-phase system, Phase 3 boundary milestone review)
 - Project & Stack: children-colouring-book | Web UI (HTML/CSS/JS), vanilla ES2020 modules, zero third-party dependencies, zero build step | Node v26.12.1 (`node:test` + `node:assert/strict`)
-- Git Baseline: 2cb4764 | Working tree: CLEAN
-- Baseline Test Status: `node test_colouring_book.js` -> 114 passed, 0 failed, 0 skipped (330 assertions)
+- Git Baseline: 2b77b63 | Working tree: CLEAN
+- Baseline Test Status: `node test_colouring_book.js` -> 140 passed, 0 failed, 0 skipped (419 assertions)
 - Canonical File Inventory:
   * `package.json` (config, 10 lines) — type module, zero dependencies
   * `index.html` (source, 63 lines) — form, status/error, preview grid, download control
   * `styles.css` (source, 180 lines) — layout and print stylesheet
-  * `app.js` (source, 230 lines) — validation, filename sanitiser, page planning, book assembly, DOM wiring
+  * `app.js` (source, 110 lines) — pure DOM controller, no exports
   * `src/rng.js` (source, 151 lines) — FNV-1a hash, mulberry32 PRNG, deriveSeed, seeded helpers
   * `src/themes.js` (source, 244 lines) — stopwords, plural ladder, 25-motif vocabulary, 50-keyword map, fallback
-  * `src/motifs.js` (source, 468 lines) — 25 procedural motif generators, polyline builders, bounds
+  * `src/motifs.js` (source, 470 lines) — 25 procedural motif generators, polyline builders, bounds
   * `src/lettering.js` (source, 288 lines) — single-stroke A-Z/0-9/punctuation, NFD accent resolution, layout/measure/fit
-  * `src/page.js` (source, 274 lines) — interior page composition, polyline IR, SVG serialiser
+  * `src/page.js` (source, 279 lines) — interior page composition, polyline IR, SVG serialiser
   * `src/cover.js` (source, 296 lines) — cover composition, name fitting and wrapping
-  * `test_colouring_book.js` (test, 1326 lines) — 114 tests, 330 assertions
+  * `src/pdf.js` (source, 202 lines) — PDF 1.4 writer, byte-chunk assembly, xref, UTF-16BE info strings
+  * `src/book.js` (source, 188 lines) — validation, filename sanitiser, page planning, book assembly
+  * `test_colouring_book.js` (test, 1667 lines) — 140 tests, 419 assertions
   * `plans/MASTER_ROADMAP.md` (doc) — 3 phases x 3 segments
   * `plans/mutation_baseline.json` (config) — per-file survivor ratchet
   * `.gitattributes` (config) — eol=lf normalisation
-- Mandatory Anti-Drift Invariants: DOM selector parity between `app.js` and `index.html` for the eight contract IDs (`#theme-input`, `#name-input`, `#generate-btn`, `#status`, `#error`, `#preview`, `#download-btn`, `#book-title`) plus `data-role="page-preview"` and `data-page-index`; export parity for every `export` in all six modules; determinism guard banning `Math.random`, `Date.now`, `new Date`, `localeCompare`, `eval`, `new Function`, dynamic `import()` across all seven source files.
+- Mandatory Anti-Drift Invariants: DOM selector parity between `app.js` and `index.html` for the eight contract IDs (`#theme-input`, `#name-input`, `#generate-btn`, `#status`, `#error`, `#preview`, `#download-btn`, `#book-title`) plus `data-role="page-preview"` and `data-page-index`; export parity for every `export` in all nine modules, with `app.js` asserted to export nothing; determinism guard banning `Math.random`, `Date.now`, `new Date`, `localeCompare`, `eval`, `new Function`, dynamic `import()` across all eight source files.
 
 ---
 
-# Phase 2 Milestone Review
+# Phase 3 Milestone Review
 
-Phase 2 of `plans/MASTER_ROADMAP.md` is complete. Phase 3 (PDF 1.4 writer, book orchestrator, end-to-end verification) is about to begin.
+Phase 3 of `plans/MASTER_ROADMAP.md` is complete. It is the last roadmap phase, so this review is also the pre-ship gate.
 
-## What Phase 2 delivered
+## What Phase 3 delivered
 
-- `src/motifs.js`: 25 procedural generators matching `MOTIF_VOCABULARY` exactly, each emitting polylines in a `0..1` box carrying `closed`, `fill` and a relative `weight` (1 main, 0.6 detail). Builders `stroke`, `polygon`, `circle`, `ellipse`, `arc`, plus `computeBounds`.
-- `src/lettering.js`: single-stroke glyphs for A-Z, 0-9, space, hyphen and apostrophe in an em box where `size` equals cap height. Accented letters resolve by NFD decomposition into base glyph plus accent strokes for acute, grave, circumflex, tilde, diaeresis, ring, caron and cedilla. `layoutText`, `measureText`, `fitText`, `hasGlyph`.
-- `src/page.js`: interior composition — two frame rectangles, a ground line with tufts, and 3-7 motifs on a jittered grid. Each motif is scaled to 0.8 of its cell and its centre moves by at most 0.1 of a cell, so worst-case bounding boxes touch but never overlap. Owns the single SVG serialiser both pages and cover use.
-- `src/cover.js`: decorative frame with corner ornaments, fixed title, uppercased name fitted to at most four lines and never below 60 pt cap height, theme subtitle, and three theme motifs.
-- `app.js`: `buildPlaceholderPages` became `planBookPages` (3-7 distinct motifs per page, at least one from the theme); new `buildPreviewPages` composes the cover plus five pages as SVG strings; `renderPreviews` writes them into `#preview` as `data-page-index="0".."5"`. `validateInputs` now also rejects names containing characters the lettering cannot draw.
-- `test_colouring_book.js`: 57 -> 114 tests, 140 -> 330 assertions.
+- `src/pdf.js`: a dependency-free PDF 1.4 writer returning `Uint8Array`. The document is assembled as an array of byte chunks and every xref offset is accumulated from `chunk.length`, never from a string length, so the multi-byte binary comment cannot shift the table. `/Length` excludes the EOL before `endstream`. `pdfTextString` emits a literal for printable ASCII and a UTF-16BE hex string with a `FEFF` BOM otherwise, including surrogate-pair splitting for astral characters. `pageContentStream` sets `1 1 1 rg` white fill once per page, `0 0 0 RG` black stroke, `1 J 1 j` round caps and joins, clamps every stroke to `MIN_STROKE_WIDTH = 4`, and emits `h` whenever a path is `closed || fill` because PDF's `B` implicitly closes.
+- `src/book.js`: `validateInputs`, `sanitiseFilename`, `planBookPages`, `bookDiversity`, `generateBook`. `generateBook` throws rather than returning a book that fails its own quality bar — pages must be pairwise distinct and at least `MIN_DISTINCT_PAGE_MOTIF_SETS = 4` of the five must carry a distinct motif multiset.
+- `app.js`: reduced to a pure controller with no exports. `renderPreviews` writes one `figure[data-role="page-preview"]` per card, `downloadBook` builds a `Blob`, clicks an anchor and revokes the object URL on a zero-delay timer, and `init` wires the form. Every decision worth testing moved down into `src/book.js`.
+- `src/motifs.js` and `src/page.js`: `circle` and `ellipse` gained a trailing `options` bag, the house roof and door and both car wheels are now `fill: true`, and `polylineToPathData` emits `Z` when `closed || fill` so the SVG preview and the PDF agree on geometry.
+- `test_colouring_book.js`: 114 -> 140 tests, 330 -> 419 assertions.
 
 ## Stage 6 evidence
 
-- Deterministic assertion-integrity scan against `fc5be24`: `SCAN: PASS`. 172 assertions added, 4 removed; 53 test declarations added, 3 removed. All removals belong to the `buildPlaceholderPages` -> `planBookPages` rename and are itemised in `plans/removal_justification.md`; the waiver is logged in `plans/removal_waivers.log`.
-- Mutation pass, scoped to source lines added since `fc5be24`, 400-mutant cap: 288 killed, 112 survived, **72.0%**.
-  - `src/motifs.js`: 154 killed, 34 survived.
-  - `src/lettering.js`: 84 killed, 34 survived.
-  - `src/cover.js`: 26 killed, 31 survived.
-  - `src/page.js`: 19 killed, 9 survived.
-  - `app.js`: 5 killed, 4 survived — all DOM-only lines.
-  - The first pass, before the geometry assertions landed, was 54.0% with 184 survivors. The ratchet moved forward.
+- Deterministic assertion-integrity scan against `cb9945e`: `SCAN: PASS`. 92 assertions added, 9 removed; 33 test declarations added, 5 removed. Every removal belongs to the `buildPreviewPages` -> `generateBook` rename or to `app.js` losing its exports, and each is itemised in `plans/removal_justification.md`; the waiver is logged in `plans/removal_waivers.log`.
+- Mutation pass, scoped to source lines added since `cb9945e`, 400-mutant cap, run twice:
+  - First pass: 99 mutants, 74 killed, 25 survived, **74.7%**.
+  - Second pass after the pinning commit: 99 mutants, 92 killed, 7 survived, **92.9%**.
+  - Per file now: `src/book.js` 29/0, `src/pdf.js` 52/2, `src/motifs.js` 10/2, `src/page.js` 1/0, `app.js` 0/3.
+  - The seven survivors are accepted, not overlooked: three `app.js` lines need a DOM shim the design deliberately avoids; `circle`/`ellipse` `segments = 24` are curve-sampling bounds; `pdf.js:36` is an equivalent mutant because `String(-0)` is already `'0'`; `pdf.js:43` is unreachable because `asciiBytes` only ever receives ASCII structure and formatted numbers.
 
-## Bugs the gates caught
+## Gaps the gates caught
 
-1. `composeCover` added one cap height to each name line's `y`, but `layoutText`'s `y` is the cap top, not the baseline. The name sat a full cap height below centre. Found by the new centring test, fixed by centring the cap block.
-2. `app.js` used `figure.querySelector('svg')`, which the DOM parity invariant correctly rejects because it cannot be checked against `index.html`. Replaced with `firstElementChild`.
-3. `layoutText` and `measureText` did not normalise input, so a decomposed accent (`E` + U+0301) threw while the precomposed form worked. Both now normalise to NFC.
+1. **The Phase 3 filled-path constraint was not actually exercised.** The mutation pass showed the house roof, the house door and both car wheels could each lose `fill: true` with the suite still green. The `B`-versus-`S` branch was only covered by a hand-built polyline in the serialiser test, never by a real motif. Now pinned by exact filled-shape counts per motif.
+2. **The PDF structural contracts were asserted through the constants that produce them.** `text.startsWith(\`%PDF-${PDF_VERSION}\`)` cannot fail when `PDF_VERSION` changes, and the same tautology hid the `/Kids` page tree, each page's `/Contents` reference, the trailer's `/Size`, `/Root` and `/Info`, and the free entry's `65535` generation. All are now literal-string assertions.
+3. **The A4 fallback was dead code in the suite.** Every test passed an explicit `width` and `height`, so `page.width ?? MEDIA_BOX[2]` in both the content stream and the page object was never taken. Now covered.
 
-## Known limitations carried into Phase 3
+## Known limitations carried into ship
 
-1. The 112 surviving mutants are concentrated in three classes: loop bounds on curve sampling (`i < segments` -> `i < segments + 1`, which adds one sample point and is near-equivalent), internal layout constants that are deliberately not exported (`TEXT_WIDTH`, `TITLE_Y`, `SUBTITLE_Y`, `ORNAMENT_RADIUS`, `MOTIF_BOX`, `MOTIF_ROW_Y`, the 1.35 line gap), and four DOM-only `app.js` lines. Pinning every internal constant would make any visual adjustment a test failure, so they are accepted rather than pinned.
-2. No motif currently sets `fill: true`. The IR carries the flag and the SVG writer honours it (`fill="#ffffff"` versus `fill="none"`), and a serialiser-level test pins both branches, but no generator exercises the filled path end to end. Phase 3's PDF writer must emit `B` for filled and `S` for stroke-only; if no motif is ever filled, that branch will be untested in the real pipeline.
-3. There is still no DOM shim. The DOM contract is enforced only by static selector parity, as agreed at the Phase 1 boundary.
-4. `validateInputs` and `sanitiseFilename` still live in `app.js` and move to `src/book.js` at Phase 3 Segment 2, per the Phase 1 constraint.
+1. There is still no DOM shim. `app.js`'s three surviving mutants — the status string, `downloadBtn.disabled = false`, and the revoke delay — are unobservable without one, and the DOM contract remains enforced only by static selector parity, as agreed at the Phase 1 boundary.
+2. The mutation gate mutates added lines only, so it cannot see weakness introduced by deleted logic. Phase 3 deleted `buildPreviewPages` and `app.js`'s exports; the assertion-integrity scan covers that half, but neither gate proves the deleted behaviour is fully re-covered by the new path.
+3. `pdfTextString` escapes only `\` and the two parentheses. A control character below `0x20` would fall through to the hex branch and be encoded as UTF-16BE rather than escaped, which is legal but not what a reader expects for, say, a tab in a title. No caller can currently produce one, because `validateInputs` restricts the name and the title is derived from it.
+4. The PDF writer emits no `/Font` resource and no text operators. The child's name appears on the cover as vector strokes from `src/lettering.js`, not as selectable text, so the PDF is not searchable and a screen reader cannot read the name.
+5. `styles.css` has no `@media print` rule for the preview grid. The PDF is the print artefact, so this is cosmetic, but printing the page itself would print the previews too.
 
 ## Questions — answer only these four points, under 400 words total
 
-1. Is Phase 2 complete enough to proceed to Phase 3, or does any gap above block it?
-2. Limitation 2: should Phase 3 Segment 1 add `fill: true` to a handful of motif body shapes so the PDF `B`-versus-`S` branch is exercised end to end, or is the serialiser-level test sufficient?
-3. The 72.0% mutation score with 112 survivors, mostly curve-sampling loop bounds and unexported layout constants — accept, or is there a cheap class worth pinning before Phase 3?
-4. Any Phase 3 risk the plan does not already cover, given that `src/pdf.js` must consume the same polyline IR and flip Y only there?
+1. Is Phase 3 complete enough to ship, or does any gap above block it?
+2. Limitation 1: is static selector parity an acceptable permanent substitute for a DOM shim, or should ship be gated on adding one?
+3. Limitation 4: is a vector-only cover name acceptable for a children's colouring book, or should the PDF carry a real `/Font` and text operators so the name is selectable and readable?
+4. The 92.9% mutation score with 7 accepted survivors — accept as the ship baseline, or is there a cheap class worth pinning first?
 
 End with exactly one verdict line: `AUDIT: PASS - <one sentence>` or `AUDIT: FAIL - <itemized weaknesses>`.
