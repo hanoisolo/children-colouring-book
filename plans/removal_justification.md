@@ -1,61 +1,87 @@
-# Stage 6 removal justification — Phase 2
+# Stage 6 removal justification — Phase 3
 
-Baseline: `fc5be24` (last Phase 1 commit). Diff: `plans/stage6_test.diff`.
+Baseline: `cb9945e` (last Phase 2 commit). Diff: `plans/stage6_test.diff`.
 
-The scan reports 4 removed assertions and 3 removed test declarations. Every one
-of them belongs to the `buildPlaceholderPages` helper, which Phase 2 Segment 2
-replaced with `planBookPages`. The helper was a Phase 1 placeholder that assigned
-1-3 motifs per page; the roadmap requires interior pages to carry 3-7 motifs with
-at least one drawn from the theme, so the helper's contract changed and its name
-changed with it. Nothing was removed to make a red suite go green: the suite was
-green at 107 tests before this justification was written, and the replacements
-assert strictly more than the originals.
+The scan reports 9 removed assertions and 5 removed test declarations. Every one
+belongs to one of two deliberate moves in Phase 3 Segment 2: `buildPreviewPages`
+became `generateBook` in the new `src/book.js`, and `app.js` stopped exporting
+anything at all. Nothing was removed to make a red suite go green — the suite was
+green at 136 tests before this justification was written, and every replacement
+asserts at least as much as the original.
 
 ## Removed test declarations
 
-1. `buildPlaceholderPages is deterministic for the same input`
-   Replaced by `planBookPages is deterministic for the same input`. Same
-   assertion, same `PAGE_COUNT` check, new name.
+1. `every export in app.js is imported by this suite`
+   Replaced by three tests: `app.js is a pure controller with no exports`,
+   `every export in src/book.js is imported by this suite`, and
+   `every export in src/pdf.js is imported by this suite`. Export parity now
+   covers nine modules instead of seven.
 
-2. `buildPlaceholderPages varies with the name`
-   Replaced by `planBookPages varies with the name`. Same assertion.
+2. `app.js is importable without a DOM`
+   Replaced by `app.js guards its DOM wiring behind a document check`, which
+   pins the `typeof document !== 'undefined'` guard, the `DOMContentLoaded`
+   listener, `URL.createObjectURL`, the `application/pdf` MIME type, and
+   `link.download`. The old test asserted that four helpers were functions, but
+   those helpers no longer live in `app.js`; the new test asserts the wiring that
+   actually remains there.
 
-3. `buildPlaceholderPages gives each page a bounded motif subset`
-   Replaced by `planBookPages gives each page between three and seven distinct
-   motifs`, plus two new tests that did not exist before:
-   `planBookPages puts at least one theme motif on every page` and
-   `planBookPages still fills every page when the theme matches nothing`.
+3. `buildPreviewPages returns a cover plus five distinct pages`
+   Replaced by `generateBook returns a cover plus five distinct pages and a PDF`,
+   which additionally pins the title, theme, name, filename, and that `pdfBytes`
+   is a `Uint8Array` of non-trivial length.
+
+4. `buildPreviewPages is deterministic`
+   Replaced by `generateBook is byte-identical across calls`, which compares the
+   full PDF byte array rather than only the SVG strings. Strictly stronger.
+
+5. `buildPreviewPages varies with the theme and the name`
+   Replaced by `generateBook varies with the theme and the name`, which also
+   asserts the filename differs between names.
 
 ## Removed assertions
 
-4. `assert.ok(page.motifs.length >= 1 && page.motifs.length <= 3, ...)`
-   Replaced by `assert.ok(page.motifs.length >= MIN_PAGE_MOTIFS &&
-   page.motifs.length <= MAX_PAGE_MOTIFS, ...)`, i.e. 3-7. The old bound accepted
-   1 and 2 motifs, which the roadmap forbids. This is a tightening.
+6. `assert.deepEqual(extractExports(readSource('./app.js')), expected)`
+   Replaced by `assert.deepEqual(extractExports(readSource('./app.js')), [])`.
+   The expected list is now empty because `app.js` is a controller, not a
+   library. The assertion is still exact.
 
-5. `assert.ok(book.motifs.includes(motif), ...)` — every motif had to come from
-   the theme's own list.
-   Replaced by `assert.ok(MOTIF_NAMES.includes(motif), ...)` — every motif must be
-   drawable. The original property is deliberately relaxed because a page now
-   pads from the full vocabulary to reach the 3-motif floor, which a theme with
-   two matched motifs could not otherwise satisfy. The property that actually
-   matters is asserted separately and more precisely by
-   `planBookPages puts at least one theme motif on every page`, which checks
-   `book.motifs.includes(motif)` for at least one motif on every page across
-   three themes. Net coverage is higher, not lower.
+7. `assert.equal(typeof validateInputs, 'function')`
+   `validateInputs` moved to `src/book.js`. Its presence is now asserted by
+   `every export in src/book.js is imported by this suite`, which checks the
+   exact sorted export list and that the suite imports every name.
 
-6. `assert.ok(signatures.size >= 2, 'every placeholder page is identical')`
-   Replaced by the identical assertion with the message `'every page is
-   identical'`. The scan sees a removal only because the message string changed.
+8. `assert.equal(typeof sanitiseFilename, 'function')`
+   Same move, same replacement.
 
-7. `assert.equal(typeof buildPlaceholderPages, 'function')`
-   Replaced by `assert.equal(typeof planBookPages, 'function')` and
-   `assert.equal(typeof buildPreviewPages, 'function')`. One assertion became
-   two.
+9. `assert.equal(typeof planBookPages, 'function')`
+   Same move, same replacement.
+
+10. `assert.equal(typeof buildPreviewPages, 'function')`
+    `buildPreviewPages` no longer exists. `generateBook` replaces it and is
+    covered by six dedicated tests.
+
+11. `assert.equal(svgs.size, PAGE_COUNT + 1, 'two previews are identical')`
+    Replaced by `bookDiversity` assertions in two tests:
+    `generateBook keeps the pages pairwise distinct and varied` checks
+    `distinctSvgs` and `distinctMotifSets` across five themes, and
+    `bookDiversity reports duplicates it is given` checks the predicate directly
+    on a known duplicate. The original only checked SVG distinctness; the
+    replacement also checks motif-multiset diversity.
+
+12. `assert.deepEqual(buildPreviewPages('space dinosaurs', 'Amara'), buildPreviewPages('space dinosaurs', 'Amara'))`
+    Replaced by the byte-array comparison plus
+    `assert.deepEqual(first.pages.map((page) => page.svg), second.pages.map((page) => page.svg))`.
+
+13. `assert.notDeepEqual(base, buildPreviewPages('under the sea', 'Amara'))`
+    Replaced by `assert.notEqual(base.cover.svg, otherTheme.cover.svg)`.
+
+14. `assert.notDeepEqual(base, buildPreviewPages('space dinosaurs', 'Liam'))`
+    Replaced by `assert.notEqual(base.cover.svg, otherName.cover.svg)` and
+    `assert.notEqual(base.filename, otherName.filename)`.
 
 ## Net effect
 
-- Assertions: 200 added, 4 removed.
-- Test declarations: 63 added, 3 removed.
-- Suite size: 57 tests at the Phase 1 baseline, 117 tests now, 0 skipped,
+- Assertions: 78 added, 9 removed.
+- Test declarations: 29 added, 5 removed.
+- Suite size: 117 tests at the Phase 2 baseline, 136 tests now, 0 skipped,
   0 todo.
