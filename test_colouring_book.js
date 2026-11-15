@@ -40,11 +40,24 @@ import {
   MAX_THEME_LENGTH,
   MAX_NAME_LENGTH,
   PAGE_COUNT,
+  MIN_DISTINCT_PAGE_MOTIF_SETS,
   validateInputs,
   sanitiseFilename,
   planBookPages,
-  buildPreviewPages,
-} from './app.js';
+  bookDiversity,
+  generateBook,
+} from './src/book.js';
+
+import {
+  PDF_VERSION,
+  MEDIA_BOX,
+  MIN_STROKE_WIDTH,
+  pdfTextString,
+  pageContentStream,
+  buildPdf,
+} from './src/pdf.js';
+
+import './app.js';
 
 import {
   MAIN_WEIGHT,
@@ -662,17 +675,41 @@ test('every export in src/themes.js is imported by this suite', () => {
   }
 });
 
-test('every export in app.js is imported by this suite', () => {
+test('app.js is a pure controller with no exports', () => {
+  assert.deepEqual(extractExports(readSource('./app.js')), []);
+  const imported = extractImportedNames(readSource('./app.js'));
+  assert.ok(imported.has('generateBook'), 'app.js does not import generateBook');
+});
+
+test('every export in src/book.js is imported by this suite', () => {
   const expected = [
     'MAX_NAME_LENGTH',
     'MAX_THEME_LENGTH',
+    'MIN_DISTINCT_PAGE_MOTIF_SETS',
     'PAGE_COUNT',
-    'buildPreviewPages',
+    'bookDiversity',
+    'generateBook',
     'planBookPages',
     'sanitiseFilename',
     'validateInputs',
   ];
-  assert.deepEqual(extractExports(readSource('./app.js')), expected);
+  assert.deepEqual(extractExports(readSource('./src/book.js')), expected);
+  const imported = extractImportedNames(readSource('./test_colouring_book.js'));
+  for (const name of expected) {
+    assert.ok(imported.has(name), `test suite does not import ${name}`);
+  }
+});
+
+test('every export in src/pdf.js is imported by this suite', () => {
+  const expected = [
+    'MEDIA_BOX',
+    'MIN_STROKE_WIDTH',
+    'PDF_VERSION',
+    'buildPdf',
+    'pageContentStream',
+    'pdfTextString',
+  ];
+  assert.deepEqual(extractExports(readSource('./src/pdf.js')), expected);
   const imported = extractImportedNames(readSource('./test_colouring_book.js'));
   for (const name of expected) {
     assert.ok(imported.has(name), `test suite does not import ${name}`);
@@ -756,11 +793,13 @@ test('every export in src/cover.js is imported by this suite', () => {
   }
 });
 
-test('app.js is importable without a DOM', () => {
-  assert.equal(typeof validateInputs, 'function');
-  assert.equal(typeof sanitiseFilename, 'function');
-  assert.equal(typeof planBookPages, 'function');
-  assert.equal(typeof buildPreviewPages, 'function');
+test('app.js guards its DOM wiring behind a document check', () => {
+  const source = readSource('./app.js');
+  assert.ok(source.includes("typeof document !== 'undefined'"), 'app.js has no document guard');
+  assert.ok(source.includes("document.addEventListener('DOMContentLoaded', init)"));
+  assert.ok(source.includes('URL.createObjectURL'), 'app.js never builds a download URL');
+  assert.ok(source.includes('application/pdf'), 'app.js does not declare the PDF MIME type');
+  assert.ok(source.includes('link.download'), 'app.js never sets the download filename');
 });
 
 /* ------------------------------------------------------------------ */
@@ -776,6 +815,8 @@ test('source contains no non-deterministic or dynamic-evaluation escapes', () =>
     './src/lettering.js',
     './src/page.js',
     './src/cover.js',
+    './src/pdf.js',
+    './src/book.js',
   ];
   const banned = [
     { pattern: /Math\.random\s*\(/, label: 'Math.random' },
@@ -1341,32 +1382,218 @@ test('coverToSvg produces a well-formed standalone document', () => {
 });
 
 /* ------------------------------------------------------------------ */
-/* Book assembly                                                       */
+/* PDF writer                                                          */
 /* ------------------------------------------------------------------ */
 
-test('buildPreviewPages returns a cover plus five distinct pages', () => {
-  const book = buildPreviewPages('space dinosaurs', 'Amara');
+const pdfText = (bytes) => Array.from(bytes, (byte) => String.fromCharCode(byte)).join('');
+
+const samplePages = () => {
+  const plan = planBookPages('space dinosaurs', 'Amara');
+  return [
+    composeCover('space dinosaurs', 'Amara'),
+    ...plan.pages.map((page) => composePage('space dinosaurs', 'Amara', page.index, { motifs: page.motifs })),
+  ];
+};
+
+test('buildPdf returns a Uint8Array with a PDF 1.4 header and binary comment', () => {
+  const bytes = buildPdf(samplePages(), { title: 'Test' });
+  assert.ok(bytes instanceof Uint8Array);
+  const text = pdfText(bytes);
+  assert.ok(text.startsWith(`%PDF-${PDF_VERSION}\n`));
+  assert.deepEqual(Array.from(bytes.slice(10, 14)), [0xe2, 0xe3, 0xcf, 0xd3]);
+  assert.ok(text.trimEnd().endsWith('%%EOF'));
+});
+
+test('buildPdf emits one page object per page with the A4 media box', () => {
+  const pages = samplePages();
+  const text = pdfText(buildPdf(pages, { title: 'Test' }));
+  assert.equal((text.match(/\/Type \/Page\b/g) || []).length, pages.length);
+  assert.equal((text.match(/\/MediaBox \[0 0 595\.28 841\.89\]/g) || []).length, pages.length);
+  assert.ok(text.includes(`/Count ${pages.length}`));
+  assert.deepEqual(MEDIA_BOX, [0, 0, 595.28, 841.89]);
+});
+
+test('every xref offset lands on its object header', () => {
+  const text = pdfText(buildPdf(samplePages(), { title: 'Test' }));
+  const startxref = Number(/startxref\n(\d+)\n%%EOF/.exec(text)[1]);
+  const rows = [...text.slice(startxref).matchAll(/^(\d{10}) (\d{5}) ([nf]) $/gm)];
+  assert.ok(rows.length > 1);
+  assert.equal(rows[0][3], 'f');
+  for (let number = 1; number < rows.length; number += 1) {
+    const offset = Number(rows[number][1]);
+    assert.equal(rows[number][3], 'n');
+    assert.ok(
+      text.startsWith(`${number} 0 obj`, offset),
+      `object ${number} offset ${offset} lands on ${JSON.stringify(text.slice(offset, offset + 12))}`,
+    );
+  }
+});
+
+test('startxref lands on the xref table and the row count matches /Size', () => {
+  const pages = samplePages();
+  const text = pdfText(buildPdf(pages, { title: 'Test' }));
+  const startxref = Number(/startxref\n(\d+)\n%%EOF/.exec(text)[1]);
+  assert.equal(text.slice(startxref, startxref + 4), 'xref');
+  const declared = Number(/xref\n0 (\d+)\n/.exec(text)[1]);
+  const rows = [...text.slice(startxref).matchAll(/^\d{10} \d{5} [nf] $/gm)];
+  assert.equal(rows.length, declared);
+  assert.equal(declared, 2 * pages.length + 4);
+});
+
+test('every stream length matches its declared /Length', () => {
+  const pages = samplePages();
+  const text = pdfText(buildPdf(pages, { title: 'Test' }));
+  let checked = 0;
+  for (const match of text.matchAll(/<< \/Length (\d+) >>\nstream\n/g)) {
+    const declared = Number(match[1]);
+    const start = match.index + match[0].length;
+    const end = text.indexOf('\nendstream', start);
+    assert.equal(end - start, declared, 'declared /Length does not match the stream bytes');
+    checked += 1;
+  }
+  assert.equal(checked, pages.length);
+});
+
+test('pageContentStream sets white fill, black stroke and round caps', () => {
+  const stream = pageContentStream(composePage('space dinosaurs', 'Amara', 0, { motifs: ['star'] }));
+  assert.ok(stream.startsWith('1 1 1 rg\n'));
+  assert.ok(stream.includes('0 0 595.28 841.89 re'));
+  assert.ok(stream.includes('\nf\n'));
+  assert.ok(stream.includes('0 0 0 RG'));
+  assert.ok(stream.includes('1 J'));
+  assert.ok(stream.includes('1 j'));
+  assert.ok(!stream.includes('NaN'));
+});
+
+test('pageContentStream never emits a stroke thinner than the floor', () => {
+  const stream = pageContentStream(composePage('space dinosaurs', 'Amara', 0, { motifs: ['star'] }));
+  const widths = [...stream.matchAll(/^([\d.]+) w$/gm)].map((match) => Number(match[1]));
+  assert.ok(widths.length > 0);
+  for (const width of widths) {
+    assert.ok(width >= MIN_STROKE_WIDTH, `stroke width ${width} is below the floor`);
+  }
+  assert.equal(MIN_STROKE_WIDTH, 4);
+});
+
+test('pageContentStream flips Y without mutating the IR', () => {
+  const page = {
+    polylines: [{ points: [[10, 20], [30, 40]], closed: false, fill: false, width: 4 }],
+    width: 595.28,
+    height: 841.89,
+  };
+  const stream = pageContentStream(page);
+  assert.ok(stream.includes('10 821.89 m'), 'the first point was not flipped');
+  assert.ok(stream.includes('30 801.89 l'), 'the second point was not flipped');
+  assert.deepEqual(page.polylines[0].points, [[10, 20], [30, 40]], 'the IR was mutated');
+});
+
+test('pageContentStream closes a filled path even when it is open', () => {
+  const open = { points: [[0, 0], [10, 0], [10, 10]], closed: false, width: 4 };
+  const filled = pageContentStream({ polylines: [{ ...open, fill: true }], width: 595.28, height: 841.89 });
+  assert.ok(/\nh\nB$/.test(filled), 'a filled open path was not closed before B');
+  const stroked = pageContentStream({ polylines: [{ ...open, fill: false }], width: 595.28, height: 841.89 });
+  assert.ok(!/\nh\n/.test(stroked), 'a stroke-only open path was closed');
+  assert.ok(/\nS$/.test(stroked));
+});
+
+test('pageContentStream emits B for filled paths and S for stroke-only ones', () => {
+  const stream = pageContentStream(composePage('space dinosaurs', 'Amara', 0, { motifs: ['rocket', 'star'] }));
+  assert.ok(/\nB(\n|$)/.test(stream), 'the rocket window did not emit a filled path');
+  assert.ok(/\nS(\n|$)/.test(stream), 'no stroke-only path was emitted');
+});
+
+test('pdfTextString escapes ASCII and encodes non-ASCII as UTF-16BE', () => {
+  assert.equal(pdfTextString('Amara'), '(Amara)');
+  assert.equal(pdfTextString('a(b)c'), '(a\\(b\\)c)');
+  assert.equal(pdfTextString('back\\slash'), '(back\\\\slash)');
+  assert.equal(pdfTextString('Zo\u00eb'), '<FEFF005A006F00EB>');
+  assert.equal(pdfTextString('\u00c9'), '<FEFF00C9>');
+});
+
+test('buildPdf encodes a non-ASCII title as a hex string', () => {
+  const text = pdfText(buildPdf(samplePages(), { title: 'Zo\u00eb' }));
+  assert.ok(text.includes('<FEFF005A006F00EB>'));
+  assert.ok(!text.includes('Zo\u00eb'));
+});
+
+test('buildPdf rejects an empty page list', () => {
+  assert.throws(() => buildPdf([]), TypeError);
+  assert.throws(() => buildPdf(null), TypeError);
+});
+
+/* ------------------------------------------------------------------ */
+/* Book orchestrator                                                   */
+/* ------------------------------------------------------------------ */
+
+test('generateBook returns a cover plus five distinct pages and a PDF', () => {
+  const book = generateBook('space dinosaurs', 'Amara');
+  assert.equal(book.title, "Amara's colouring book");
+  assert.equal(book.theme, 'space dinosaurs');
+  assert.equal(book.name, 'Amara');
+  assert.equal(book.filename, 'amara.pdf');
   assert.equal(book.cover.index, 0);
   assert.equal(book.cover.label, 'Cover');
   assert.equal(book.pages.length, PAGE_COUNT);
   assert.deepEqual(book.pages.map((page) => page.index), [1, 2, 3, 4, 5]);
   assert.deepEqual(book.pages.map((page) => page.label), ['Page 1', 'Page 2', 'Page 3', 'Page 4', 'Page 5']);
-  const svgs = new Set([book.cover.svg, ...book.pages.map((page) => page.svg)]);
-  assert.equal(svgs.size, PAGE_COUNT + 1, 'two previews are identical');
+  assert.ok(book.pdfBytes instanceof Uint8Array);
+  assert.ok(book.pdfBytes.length > 1000);
 });
 
-test('buildPreviewPages is deterministic', () => {
-  assert.deepEqual(buildPreviewPages('space dinosaurs', 'Amara'), buildPreviewPages('space dinosaurs', 'Amara'));
+test('generateBook is byte-identical across calls', () => {
+  const first = generateBook('space dinosaurs', 'Amara');
+  const second = generateBook('space dinosaurs', 'Amara');
+  assert.equal(first.pdfBytes.length, second.pdfBytes.length);
+  assert.ok(first.pdfBytes.every((byte, index) => byte === second.pdfBytes[index]));
+  assert.deepEqual(first.pages.map((page) => page.svg), second.pages.map((page) => page.svg));
 });
 
-test('buildPreviewPages varies with the theme and the name', () => {
-  const base = buildPreviewPages('space dinosaurs', 'Amara');
-  assert.notDeepEqual(base, buildPreviewPages('under the sea', 'Amara'));
-  assert.notDeepEqual(base, buildPreviewPages('space dinosaurs', 'Liam'));
+test('generateBook varies with the theme and the name', () => {
+  const base = generateBook('space dinosaurs', 'Amara');
+  const otherTheme = generateBook('under the sea', 'Amara');
+  const otherName = generateBook('space dinosaurs', 'Liam');
+  assert.notEqual(base.cover.svg, otherTheme.cover.svg);
+  assert.notEqual(base.cover.svg, otherName.cover.svg);
+  assert.notEqual(base.filename, otherName.filename);
+});
+
+test('generateBook rejects invalid input', () => {
+  assert.throws(() => generateBook('', 'Amara'), /Enter a theme/);
+  assert.throws(() => generateBook('space', ''), /Enter the child's name/);
+  assert.throws(() => generateBook('space', 'a'.repeat(MAX_NAME_LENGTH + 1)), /characters or fewer/);
+  assert.throws(() => generateBook('a'.repeat(MAX_THEME_LENGTH + 1), 'Amara'), /characters or fewer/);
+  assert.throws(() => generateBook('space', 'Am@ra'), /letters, spaces, hyphens and apostrophes/);
+});
+
+test('generateBook sanitises the download filename', () => {
+  assert.equal(generateBook('space', 'Zo\u00eb').filename, 'zoe.pdf');
+  assert.equal(generateBook('space', "O'Brien").filename, 'obrien.pdf');
+  assert.equal(generateBook('space', 'Anne Marie').filename, 'anne-marie.pdf');
+});
+
+test('generateBook keeps the pages pairwise distinct and varied', () => {
+  for (const theme of ['space dinosaurs', 'under the sea', 'fairy garden', 'rocket', 'unicorns and zeppelins']) {
+    const book = generateBook(theme, 'Amara');
+    const diversity = bookDiversity(book.pages);
+    assert.equal(diversity.distinctSvgs, true, `${theme} produced duplicate pages`);
+    assert.ok(
+      diversity.distinctMotifSets >= MIN_DISTINCT_PAGE_MOTIF_SETS,
+      `${theme} produced only ${diversity.distinctMotifSets} distinct motif sets`,
+    );
+  }
+});
+
+test('bookDiversity reports duplicates it is given', () => {
+  const page = { svg: '<svg/>', motifs: ['star', 'moon'] };
+  assert.deepEqual(bookDiversity([page, page]), { distinctSvgs: false, distinctMotifSets: 1 });
+  assert.deepEqual(
+    bookDiversity([page, { svg: '<svg>2</svg>', motifs: ['moon', 'star'] }]),
+    { distinctSvgs: true, distinctMotifSets: 1 },
+  );
 });
 
 test('every preview is a standalone SVG document', () => {
-  const book = buildPreviewPages('fairy garden', 'Zo\u00eb');
+  const book = generateBook('fairy garden', 'Zo\u00eb');
   for (const card of [book.cover, ...book.pages]) {
     assert.ok(card.svg.startsWith('<svg '), `${card.label} is not an SVG`);
     assert.ok(card.svg.endsWith('</svg>'), `${card.label} is truncated`);
