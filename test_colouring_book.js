@@ -1220,6 +1220,55 @@ test('composeCover is deterministic', () => {
   assert.deepEqual(composeCover('space dinosaurs', 'Amara'), composeCover('space dinosaurs', 'Amara'));
 });
 
+test('the cover draws four corner ornaments inside the inner frame', () => {
+  const cover = composeCover('space dinosaurs', 'Amara');
+  const ornaments = cover.polylines.slice(2, 6);
+  assert.equal(ornaments.length, 4);
+  const centres = ornaments.map((line) => {
+    const xs = line.points.map(([x]) => x);
+    const ys = line.points.map(([, y]) => y);
+    return [Math.round((Math.min(...xs) + Math.max(...xs)) / 2), Math.round((Math.min(...ys) + Math.max(...ys)) / 2)];
+  });
+  assert.deepEqual(centres, [[30, 30], [565, 30], [30, 812], [565, 812]]);
+  for (const line of ornaments) {
+    assert.equal(line.closed, true, 'a corner ornament is not closed');
+  }
+});
+
+test('the cover stacks title, name, subtitle and motifs in order', () => {
+  const cover = composeCover('space dinosaurs', 'Amara');
+  const titleCount = layoutText(COVER_TITLE, { size: 26 }).length;
+  const nameCount = cover.nameLines.reduce(
+    (sum, line) => sum + layoutText(line, { size: cover.nameSize }).length,
+    0,
+  );
+  const subtitleCount = layoutText(cover.subtitle, { size: 20 }).length;
+  const start = 6;
+  const bounds = [
+    ['title', start, start + titleCount],
+    ['name', start + titleCount, start + titleCount + nameCount],
+    ['subtitle', start + titleCount + nameCount, start + titleCount + nameCount + subtitleCount],
+    ['motifs', start + titleCount + nameCount + subtitleCount, cover.polylines.length],
+  ].map(([label, from, to]) => {
+    const ys = cover.polylines.slice(from, to).flatMap((line) => line.points.map(([, y]) => y));
+    return { label, top: Math.min(...ys), bottom: Math.max(...ys) };
+  });
+  for (let i = 1; i < bounds.length; i += 1) {
+    assert.ok(
+      bounds[i].top > bounds[i - 1].bottom,
+      `${bounds[i].label} overlaps ${bounds[i - 1].label}`,
+    );
+  }
+});
+
+test('fitName never leaves a leading or trailing space on a wrapped line', () => {
+  const fitted = fitName('ABCDEFGHIJ KLMNOPQRST', { maxWidth: 200 });
+  assert.ok(fitted.lines.length > 1, 'the name did not wrap');
+  for (const line of fitted.lines) {
+    assert.equal(line, line.trim(), `${JSON.stringify(line)} carries stray whitespace`);
+  }
+});
+
 /* ------------------------------------------------------------------ */
 /* SVG serialisation                                                   */
 /* ------------------------------------------------------------------ */
